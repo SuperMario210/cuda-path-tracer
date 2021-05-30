@@ -8,31 +8,8 @@
 #include <cmath>
 #include <iostream>
 
-#include "image.h"
+#include "image.cuh"
 #include "../include/lodepng.h"
-
-Image::Image(size_t x, size_t y) : width(x), height(y), data(new float3[x * y])
-{
-}
-
-Image::~Image()
-{
-    delete[] data;
-}
-
-float3 Image::get_pixel(size_t x, size_t y) const
-{
-    assert(x >= 0 && x < width && y >= 0 && y < height);
-    return data[(height - y - 1) * width + x];
-}
-
-void Image::set_pixel(size_t x, size_t y, const float3 &color)
-{
-//    assert(x >= 0 && x < width && y >= 0 && y < height);
-    x = x < width ? x : width - 1;
-    y = y < height ? y : height - 1;
-    data[(height - y - 1) * width + x] = color;
-}
 
 void Image::tone_map(float exposure, float gamma) {
     for (int i = 0; i < width * height; i++) {

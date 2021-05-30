@@ -2,7 +2,7 @@
 #include <chrono>
 #include "camera.cuh"
 #include "render.cuh"
-#include "image.h"
+#include "image.cuh"
 
 #define EXPOSURE            1.0f    // Used for tone mapping
 #define GAMMA               2.2f    // Used for gamma correction
@@ -23,8 +23,6 @@ int main(int argc, char **argv)
     const size_t samples_per_pixel = 1024;
 
     // Allocate memory for image on host and device
-
-
     float3 origin = make_float3(0, 1, 0);
     float3 look_at = make_float3(0, 0.5, 2);
     float fov = 60;

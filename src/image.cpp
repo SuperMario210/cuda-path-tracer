@@ -8,7 +8,7 @@
 #include <cmath>
 #include <iostream>
 
-#include "image.cuh"
+#include "image.h"
 #include "../include/lodepng.h"
 
 void Image::tone_map(float exposure, float gamma) {

@@ -13,8 +13,11 @@ int main(int argc, char **argv)
     const size_t samples_per_pixel = 1024/4;
 
     // Setup environment map
-    const EnvironmentMap envmap_h("../background/studio.hdr");
-    EnvironmentMap *envmap_d = envmap_h.copy_to_device();
+    const EnvironmentMap envmap("../background/studio.hdr");
+    EnvironmentMapData envmap_h = envmap.get_data();
+    EnvironmentMapData *envmap_d;
+    gpuErrchk(cudaMalloc(&envmap_d, sizeof(EnvironmentMapData)));
+    gpuErrchk(cudaMemcpy(envmap_d, &envmap_h, sizeof(EnvironmentMapData), cudaMemcpyHostToDevice));
 
     // Setup camera
     float3 origin = make_float3(0, 1, 0);
@@ -24,13 +27,13 @@ int main(int argc, char **argv)
     float aperture = 0;
     float focus_dist = length(look_at - origin);
     Camera camera_h(origin, look_at, fov, aspect_ratio, aperture, focus_dist);
-    Camera* camera_d;
+    Camera *camera_d;
     gpuErrchk(cudaMalloc(&camera_d, sizeof(Camera)));
     gpuErrchk(cudaMemcpy(camera_d, &camera_h, sizeof(Camera), cudaMemcpyHostToDevice));
 
     // Setup image
     Image image_h(width, height);
-    float3* image_d;
+    float3 *image_d;
     gpuErrchk(cudaMalloc(&image_d, width * height * sizeof(float3)));
     dim3 block(8, 8, 1);
     dim3 grid(width / block.x, height / block.y, 1);

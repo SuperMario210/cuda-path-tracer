@@ -2,7 +2,7 @@
 #include <vector_types.h>
 #include "camera.cuh"
 #include "object.cuh"
-#include "environment_map.cuh"
+#include "environment_map.h"
 #include <curand_kernel.h>
 
 __device__ Ray scatter(const Ray &in_ray, const Intersection &intersect, float3 &attenuation, curandState &rand_state)
@@ -18,7 +18,15 @@ __device__ Ray scatter(const Ray &in_ray, const Intersection &intersect, float3 
     return {intersect.position, intersect.normal + p};
 }
 
-__device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMap *envmap)
+__device__ float3 sample_envmap(const EnvironmentMapData *envmap, const float3 &direction)
+{
+    auto dir = normalize(direction);
+    auto phi = atan2f(dir.z, dir.x) * (0.5f / PI) + 0.5f;
+    auto theta = acosf(dir.y) / PI;
+    return make_float3(tex2D<float4>(envmap->texture_obj, phi, theta));
+}
+
+__device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMapData *envmap)
 {
     Plane plane(make_float3(0), make_float3(0, 1, 0));
     Sphere sphere(make_float3(0, 0.5, 2), 0.5);
@@ -35,7 +43,7 @@ __device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMap *env
             r = scatter(r, intersect, attenuation, rand_state);
             color *= attenuation;
         } else {
-            color *= envmap->sample(r.direction);
+            color *= sample_envmap(envmap, r.direction);
             break;
         }
     }
@@ -43,7 +51,7 @@ __device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMap *env
     return color;
 }
 
-__global__ void render_kernel(EnvironmentMap *envmap, Camera *camera, float3 *image_data, size_t width, size_t height,
+__global__ void render_kernel(EnvironmentMapData *envmap, Camera *camera, float3 *image_data, size_t width, size_t height,
                               size_t samples_per_pixel)
 {
     size_t x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -64,7 +72,7 @@ __global__ void render_kernel(EnvironmentMap *envmap, Camera *camera, float3 *im
     image_data[i] = accum_color / samples_per_pixel;
 }
 
-__host__ void launch_render_kernel(EnvironmentMap *envmap, Camera *camera, float3 *image_data, size_t width, size_t height,
+__host__ void launch_render_kernel(EnvironmentMapData *envmap, Camera *camera, float3 *image_data, size_t width, size_t height,
                                    size_t samples_per_pixel, dim3 grid, dim3 block)
                           {
     render_kernel <<< grid, block >>>(envmap, camera, image_data, width, height, samples_per_pixel);

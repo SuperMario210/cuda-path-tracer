@@ -14,11 +14,13 @@
 class Image
 {
 public:
-    const size_t width;
-    const size_t height;
+    size_t width;
+    size_t height;
     float3 *data;
 
 public:
+    inline Image() = default;
+
     __host__ __device__ inline Image(size_t x, size_t y) : width(x), height(y), data(new float3[x * y])
     {
 

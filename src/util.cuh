@@ -6,8 +6,19 @@
 #define PATHTRACER_UTIL_H
 
 
+#include <iostream>
+
 #define PI          3.14159265358979323846264338327950288f
 #define EPSILON     0.001f
+
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line)
+{
+    if (code != cudaSuccess) {
+        fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+        exit(code);
+    }
+}
 
 
 #endif //PATHTRACER_UTIL_H

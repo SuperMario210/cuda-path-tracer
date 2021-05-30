@@ -8,6 +8,7 @@
 
 #include "ray.cuh"
 #include "util.cuh"
+#include <curand_kernel.h>
 
 class Camera
 {
@@ -37,19 +38,20 @@ public:
         lens_radius = aperture / 2;
     }
 
-    __device__ inline Ray cast_ray(float s, float t) const
+    __device__ inline Ray cast_ray(float s, float t, curandState &rand_state) const
     {
-        // Generate random vector in unit disc
-//        float3 rd;
-//        do {
-//            rd = make_float3(randomf(-1,1), randomf(-1,1), 0);
-//
-//        } while (dot(rd, rd) >= 1);
-//        rd *= lens_radius;
-//
-//        float3 offset = u * rd.x + v * rd.y;
-//        return {origin + offset, bottom_left + right * s + up * t - offset};
-        return {origin, bottom_left + right * s + up * t};
+        if (lens_radius < EPSILON) {
+            return {origin, bottom_left + right * s + up * t};
+        } else {
+            float2 rd;
+            do {
+                rd = make_float2(curand_uniform(&rand_state), curand_uniform(&rand_state)) * 2.0 - 1;
+            } while (dot(rd, rd) >= 1);
+            rd *= lens_radius;
+
+            float3 offset = u * rd.x + v * rd.y;
+            return {origin + offset, bottom_left + right * s + up * t - offset};
+        }
     }
 };
 

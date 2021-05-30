@@ -7,7 +7,7 @@
 
 #include "../include/cutil_math.cuh"
 
-void launch_render_kernel(Camera *camera, float3 *image_data, size_t width, size_t height, size_t samples_per_pixel,
-                          dim3 grid, dim3 block);
+__host__ void launch_render_kernel(Camera *camera, float3 *image_data, size_t width, size_t height,
+                                   size_t samples_per_pixel, dim3 grid, dim3 block);
 
 #endif //CUDA_PATH_TRACER_KERNEL_CUH

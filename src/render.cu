@@ -46,7 +46,8 @@ __device__ float3 path_trace(Ray r, curandState &rand_state)
 }
 
 __global__ void render_kernel(Camera *camera, float3 *image_data, size_t width, size_t height,
-                              size_t samples_per_pixel) {
+                              size_t samples_per_pixel)
+{
     size_t x = blockIdx.x * blockDim.x + threadIdx.x;
     size_t y = blockIdx.y * blockDim.y + threadIdx.y;
     size_t i = (height - y - 1) * width + x;
@@ -58,14 +59,15 @@ __global__ void render_kernel(Camera *camera, float3 *image_data, size_t width, 
     for (int samp = 0; samp < samples_per_pixel; samp++) {
         float u = curand_uniform(&rand_state) - 0.5f;
         float v = curand_uniform(&rand_state) - 0.5f;
-        Ray ray = camera->cast_ray(float(x + v) / float(width), float(y + u) / float(height));
+        Ray ray = camera->cast_ray(float(x + v) / float(width), float(y + u) / float(height), rand_state);
         accum_color += path_trace(ray, rand_state);
     }
 
     image_data[i] = accum_color / samples_per_pixel;
 }
 
-void launch_render_kernel(Camera *camera, float3 *image_data, size_t width, size_t height, size_t samples_per_pixel,
-                          dim3 grid, dim3 block) {
+__host__ void launch_render_kernel(Camera *camera, float3 *image_data, size_t width, size_t height,
+                                   size_t samples_per_pixel, dim3 grid, dim3 block)
+                          {
     render_kernel <<< grid, block >>>(camera, image_data, width, height, samples_per_pixel);
 }

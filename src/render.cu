@@ -23,15 +23,15 @@ __device__ Ray scatter(const Ray &in_ray, const Intersection &intersect, float3 
     return {intersect.position, dir};
 }
 
-__device__ float4 sample_envmap(const EnvironmentMapData *envmap, const float3 &direction)
+__device__ float3 sample_envmap(const EnvironmentMapData *envmap, const float3 &direction)
 {
     auto dir = normalize(direction);
     auto phi = atan2f(dir.z, dir.x) * (0.5f / PI) + 0.5f;
     auto theta = acosf(dir.y) / PI;
-    return tex2D<float4>(envmap->texture_obj, phi, theta);
+    return make_float3(tex2D<float4>(envmap->texture_obj, phi, theta));
 }
 
-__device__ float3 sample_lights(const EnvironmentMapData *envmap, float3 &direction, curandState &rand_state)
+__device__ float3 sample_lights(const EnvironmentMapData *envmap, curandState &rand_state)
 {
     size_t x = envmap->marginal_lookup[(size_t)(curand_uniform(&rand_state) * envmap->width - 0.5)];
     size_t y = envmap->conditional_lookup[x * envmap->height + (size_t)(curand_uniform(&rand_state) * envmap->height - 0.5)];
@@ -40,9 +40,7 @@ __device__ float3 sample_lights(const EnvironmentMapData *envmap, float3 &direct
     auto theta = y * PI / envmap->height;
     auto sin_t = -sinf(theta);
 
-    direction = make_float3(sin_t * cosf(phi), -cosf(theta), sin_t * sinf(phi));
-
-    return make_float3(tex2D<float4>(envmap->texture_obj, float(x) / float(envmap->width), -float(y) / float(envmap->height)));
+    return make_float3(sin_t * cosf(phi), -cosf(theta), sin_t * sinf(phi));
 }
 
 __device__ float envmap_pdf(const EnvironmentMapData *envmap, float3 &direction)
@@ -78,10 +76,11 @@ __device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMapData 
             float3 attenuation;
             Ray r_new(make_float3(0), make_float3(0));
 
+            // TODO: figure out how to reduce divergence caused by this branch
             if (curand_uniform(&rand_state) < 0.5) {
                 r_new = scatter(r, intersect, attenuation, rand_state);
             } else {
-                attenuation = sample_lights(envmap, r_new.direction, rand_state);
+                r_new.direction = sample_lights(envmap, rand_state);
                 r_new.origin = intersect.position;
                 attenuation = make_float3(0.5);
             }
@@ -102,7 +101,7 @@ __device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMapData 
 #endif
 
         } else {
-            color = color * make_float3(sample_envmap(envmap, r.direction));
+            color = color * sample_envmap(envmap, r.direction);
             return color;
         }
     }

@@ -10,7 +10,7 @@ int main(int argc, char **argv)
 {
     const size_t width = 1920/4;
     const size_t height = 1080/4;
-    const size_t samples_per_pixel = 5000;
+    const size_t samples_per_pixel = 256;
 
     // Setup environment map
     const EnvironmentMap envmap("../background/test.hdr");

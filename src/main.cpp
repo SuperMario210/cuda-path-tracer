@@ -3,24 +3,24 @@
 #include "camera.cuh"
 #include "render.cuh"
 
-#define EXPOSURE            1.0f    // Used for tone mapping
+#define EXPOSURE            2.0f    // Used for tone mapping
 #define GAMMA               2.2f    // Used for gamma correction
 
 int main(int argc, char **argv)
 {
-    const size_t width = 1920/2;
-    const size_t height = 1080/2;
-    const size_t samples_per_pixel = 1024/4;
+    const size_t width = 1920/4;
+    const size_t height = 1080/4;
+    const size_t samples_per_pixel = 5000;
 
     // Setup environment map
-    const EnvironmentMap envmap("../background/studio.hdr");
+    const EnvironmentMap envmap("../background/test.hdr");
     EnvironmentMapData envmap_h = envmap.get_data();
     EnvironmentMapData *envmap_d;
     gpuErrchk(cudaMalloc(&envmap_d, sizeof(EnvironmentMapData)));
     gpuErrchk(cudaMemcpy(envmap_d, &envmap_h, sizeof(EnvironmentMapData), cudaMemcpyHostToDevice));
 
     // Setup camera
-    float3 origin = make_float3(0, 1, 0);
+    float3 origin = make_float3(2, 1, 2);
     float3 look_at = make_float3(0, 0.5, 2);
     float fov = 60;
     float aspect_ratio = float(width) / float(height);

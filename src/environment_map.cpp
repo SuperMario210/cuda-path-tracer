@@ -38,9 +38,14 @@ EnvironmentMap::~EnvironmentMap()
 
     cudaDestroyTextureObject(texture_obj);
     cudaFreeArray(data_array);
+
+    cudaFree(marginal_cdf);
+    cudaFree(conditional_cdf);
+    cudaFree(marginal_lookup);
+    cudaFree(conditional_lookup);
 }
 
-void EnvironmentMap::build_distribution(const float *data)
+void EnvironmentMap::build_distribution(float *data)
 {
     std::cout << "Building environment map...\n";
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -83,6 +88,25 @@ void EnvironmentMap::build_distribution(const float *data)
         }
     }
 
+    // Compute PDFs for each pixel
+    for (size_t x = 0; x < width; x++) {
+        for (size_t y = 0; y < height; y++) {
+            size_t i = 4 * ((height - y - 1) * width + x) + 3;
+
+            float sin_theta = sinf(y * PI / height);
+            if (sin_theta == 0) {
+                data[i] = 0;
+                continue;
+            }
+
+            auto cond_cdf = &d_conditional_cdf[x * height];
+            float pdf_x = (x == 0) ? d_marginal_cdf[0] : (d_marginal_cdf[x] - d_marginal_cdf[x - 1]);
+            float pdf_y = (y == 0) ? cond_cdf[0] : (cond_cdf[y] - cond_cdf[y - 1]);
+
+            data[i] = static_cast<float>(width * height) * (pdf_x * pdf_y) / (sin_theta * 2.0f * PI * PI);
+        }
+    }
+
     // Precompute indices for sampling
     for (size_t x = 0; x < width; x++) {
         for (size_t y = 0; y < height; y++) {
@@ -119,16 +143,10 @@ void EnvironmentMap::build_distribution(const float *data)
     gpuErrchk(cudaMalloc(&conditional_lookup, width * height * sizeof(size_t)));
     gpuErrchk(cudaMemcpy(conditional_lookup, d_conditional_lookup, width * height * sizeof(size_t), cudaMemcpyHostToDevice));
 
-
-    std::cout << "Delete \n";
-
     delete[] d_marginal_cdf;
     delete[] d_conditional_cdf;
     delete[] d_marginal_lookup;
     delete[] d_conditional_lookup;
-
-    std::cout << "Done \n";
-
 }
 
 void EnvironmentMap::create_texture(const float *data) {
@@ -160,6 +178,8 @@ void EnvironmentMap::create_texture(const float *data) {
 
 EnvironmentMapData EnvironmentMap::get_data() const {
     return EnvironmentMapData {
+        width,
+        height,
         texture_obj,
         marginal_cdf,
         conditional_cdf,

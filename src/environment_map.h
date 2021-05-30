@@ -12,6 +12,8 @@
 
 struct EnvironmentMapData
 {
+    size_t width;
+    size_t height;
     cudaTextureObject_t texture_obj;
     float *marginal_cdf;
     float *conditional_cdf;
@@ -35,7 +37,7 @@ private:
     size_t *marginal_lookup;
     size_t *conditional_lookup;
 
-    void build_distribution(const float *data);
+    void build_distribution(float *data);
     void create_texture(const float *data);
 
 //    void direction_to_pixel(const float3 &direction, size_t &x, size_t &y) const
@@ -62,15 +64,7 @@ public:
     ~EnvironmentMap();
 
     EnvironmentMapData get_data() const;
-    
-//
-//
-//    float3 sample(const float3 &direction) const
-//    {
-//        size_t x, y;
-//        direction_to_pixel(direction, x, y);
-//        return get_pixel(x, y);
-//    }
+
 //
 //    float sample_lights(float3 &color, float3 &direction, curandState &rand_state) const
 //    {

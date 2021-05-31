@@ -8,24 +8,24 @@
 
 int main(int argc, char **argv)
 {
-    const size_t width = 1920/4;
-    const size_t height = 1080/4;
-    const size_t samples_per_pixel = 256;
+    const size_t width = 1920;
+    const size_t height = 1080;
+    const size_t samples_per_pixel = 512;
 
     // Setup environment map
-    const EnvironmentMap envmap("../background/test.hdr");
+    const EnvironmentMap envmap("../background/studio.hdr");
     EnvironmentMapData envmap_h = envmap.get_data();
     EnvironmentMapData *envmap_d;
     gpuErrchk(cudaMalloc(&envmap_d, sizeof(EnvironmentMapData)));
     gpuErrchk(cudaMemcpy(envmap_d, &envmap_h, sizeof(EnvironmentMapData), cudaMemcpyHostToDevice));
 
     // Setup camera
-    float3 origin = make_float3(2, 1, 2);
-    float3 look_at = make_float3(0, 0.5, 2);
-    float fov = 60;
+    float3 origin = make_float3(0, 1, 5);
+    float3 look_at = make_float3(0, 0.5, 0);
+    float fov = 35;
     float aspect_ratio = float(width) / float(height);
-    float aperture = 0;
-    float focus_dist = length(look_at - origin);
+    float aperture = 0.1;
+    float focus_dist = 4.75; // length(look_at - origin);
     Camera camera_h(origin, look_at, fov, aspect_ratio, aperture, focus_dist);
     Camera *camera_d;
     gpuErrchk(cudaMalloc(&camera_d, sizeof(Camera)));
@@ -49,6 +49,8 @@ int main(int argc, char **argv)
 
     // Copy image data back to device
     gpuErrchk(cudaMemcpy(image_h.data, image_d, width * height * sizeof(float3), cudaMemcpyDeviceToHost));
+    gpuErrchk(cudaFree(envmap_d));
+    gpuErrchk(cudaFree(camera_d));
     gpuErrchk(cudaFree(image_d));
     gpuErrchk(cudaDeviceSynchronize());
 

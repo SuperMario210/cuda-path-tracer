@@ -15,8 +15,6 @@ struct EnvironmentMapData
     size_t width;
     size_t height;
     cudaTextureObject_t texture_obj;
-    float *marginal_cdf;
-    float *conditional_cdf;
     size_t *marginal_lookup;
     size_t *conditional_lookup;
 };
@@ -32,8 +30,6 @@ private:
     cudaTextureObject_t texture_obj;
 
     // EnvironmentMap CDF
-    float *marginal_cdf;
-    float *conditional_cdf;
     size_t *marginal_lookup;
     size_t *conditional_lookup;
 

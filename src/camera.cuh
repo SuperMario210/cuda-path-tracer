@@ -24,7 +24,7 @@ public:
                     float focus_dist) : origin(origin)
     {
         // Calculate screen plane dimensions
-        auto height = 2.0 * tan(fov * PI / 360);
+        auto height = 2.0f * tanf(fov * PI / 360.0f);
         auto width = aspect_ratio * height;
 
         w = normalize(origin - look_at);
@@ -50,7 +50,7 @@ public:
             rd *= lens_radius;
 
             float3 offset = u * rd.x + v * rd.y;
-            return {origin + offset, bottom_left + right * s + up * t - offset};
+            return {origin + offset, normalize(bottom_left + right * s + up * t - offset)};
         }
     }
 };

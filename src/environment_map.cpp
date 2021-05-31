@@ -35,12 +35,9 @@ EnvironmentMap::EnvironmentMap(const std::string &filename)
 
 EnvironmentMap::~EnvironmentMap()
 {
-
     cudaDestroyTextureObject(texture_obj);
     cudaFreeArray(data_array);
 
-    cudaFree(marginal_cdf);
-    cudaFree(conditional_cdf);
     cudaFree(marginal_lookup);
     cudaFree(conditional_lookup);
 }
@@ -133,11 +130,6 @@ void EnvironmentMap::build_distribution(float *data)
     auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
     std::cout << "Built environment map in " << ms_int.count() << " ms\n";
 
-    gpuErrchk(cudaMalloc(&marginal_cdf, width * sizeof(float)));
-    gpuErrchk(cudaMemcpy(marginal_cdf, d_marginal_cdf, width * sizeof(float), cudaMemcpyHostToDevice));
-    gpuErrchk(cudaMalloc(&conditional_cdf, width * height * sizeof(float)));
-    gpuErrchk(cudaMemcpy(conditional_cdf, d_conditional_cdf, width * height * sizeof(float), cudaMemcpyHostToDevice));
-
     gpuErrchk(cudaMalloc(&marginal_lookup, width * sizeof(size_t)));
     gpuErrchk(cudaMemcpy(marginal_lookup, d_marginal_lookup, width * sizeof(size_t), cudaMemcpyHostToDevice));
     gpuErrchk(cudaMalloc(&conditional_lookup, width * height * sizeof(size_t)));
@@ -181,8 +173,6 @@ EnvironmentMapData EnvironmentMap::get_data() const {
         width,
         height,
         texture_obj,
-        marginal_cdf,
-        conditional_cdf,
         marginal_lookup,
         conditional_lookup
     };

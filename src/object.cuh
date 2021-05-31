@@ -11,33 +11,16 @@
 #include <memory>
 #include "ray.cuh"
 #include "util.cuh"
-
-struct Intersection
-{
-    bool external;
-    float t;
-    float3 position;
-    float3 normal;
-
-    __device__ Intersection() : t(FLT_MAX), position(), normal(), external()
-    {
-
-    }
-
-    __device__ inline void set_normal(const Ray &r, const float3 &out_norm)
-    {
-        external = dot(r.direction, out_norm) < 0;
-        normal = external ? out_norm : -out_norm;
-    }
-};
+#include "material.cuh"
 
 class Sphere
 {
 public:
     float3 position;
     float radius;
+    Material *material;
 
-    __device__ Sphere(const float3 &position, float radius) : position(position), radius(radius)
+    __device__ Sphere(const float3 &position, float radius, Material *mat) : position(position), radius(radius), material(mat)
     {
 
     }
@@ -63,6 +46,7 @@ public:
         intersect.t = t;
         intersect.position = r.at(intersect.t);
         intersect.set_normal(r, (intersect.position - position) / radius);
+        intersect.material = material;
         return true;
     }
 };
@@ -71,8 +55,9 @@ class Plane
 {
 public:
     float3 position, normal;
+    Material *material;
 
-    __device__ Plane(const float3 &position, const float3 &normal) : position(position), normal(normalize(normal))
+    __device__ Plane(const float3 &position, const float3 &normal, Material *mat) : position(position), normal(normalize(normal)), material(mat)
     {
 
     }
@@ -92,6 +77,7 @@ public:
         intersect.t = t;
         intersect.position = r.at(intersect.t);
         intersect.set_normal(r, normal);
+        intersect.material = material;
         return true;
     }
 };

@@ -1,17 +1,72 @@
 #include <iostream>
 #include <chrono>
+#include <vector>
+#include <fstream>
+#include <sstream>
 #include "camera.cuh"
 #include "image.h"
 #include "render.cuh"
+#include "object.cuh"
+#include "bvh.cuh"
 
 #define EXPOSURE            2.0f    // Used for tone mapping
 #define GAMMA               2.2f    // Used for gamma correction
 
+void load_obj(const std::string &filename, std::vector<Triangle> &triangles)
+{
+    std::cout << "Loading .obj file...\n";
+    std::ifstream obj_file (filename);
+    std::vector<float3> vertices;
+    vertices.emplace_back();
+    size_t count = 0;
+    std::string line;
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    while (!obj_file.eof()) {
+        getline(obj_file, line);
+        if (obj_file.eof()) { break; }
+
+        char type;
+        std::istringstream iss(line);
+        iss >> type;
+
+        if (type == 'v') {
+            float3 v;
+            iss >> v.x >> v.y >> v.z;
+            vertices.push_back(v);
+        } else if (type == 'f') {
+            size_t i1, i2, i3;
+            iss >> i1 >> i2 >> i3;
+            i1 = (i1 < 0) ? i1 + vertices.size() : i1;
+            i2 = (i2 < 0) ? i2 + vertices.size() : i2;
+            i3 = (i3 < 0) ? i3 + vertices.size() : i3;
+            triangles.emplace_back(vertices[i1], vertices[i2], vertices[i3]);
+            count++;
+        } else {
+            std::cerr << "A parsing error occurred while reading in "
+                      << "the .obj file" << filename << "\n";
+            return;
+        }
+    }
+
+    auto t2 = std::chrono::high_resolution_clock::now();
+    auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
+    std::cout << "Loaded " << count << " triangles in " << ms_int.count() << " ms\n";
+}
+
 int main(int argc, char **argv)
 {
-    const size_t width = 1920;
-    const size_t height = 1080;
-    const size_t samples_per_pixel = 512;
+    const size_t width = 1920 / 4;
+    const size_t height = 1080 / 4;
+    const size_t samples_per_pixel = 256;
+
+    // Setup BVH
+    std::vector<Triangle> triangles;
+    load_obj("../obj/bunny_lowpoly.obj", triangles);
+    BVH bvh_h(triangles);
+    BVH *bvh_d;
+    gpuErrchk(cudaMalloc(&bvh_d, sizeof(BVH)));
+    gpuErrchk(cudaMemcpy(bvh_d, &bvh_h, sizeof(BVH), cudaMemcpyHostToDevice));
 
     // Setup environment map
     const EnvironmentMap envmap_h("../background/studio.hdr");
@@ -41,7 +96,7 @@ int main(int argc, char **argv)
     // Run render kernel
     std::cout << "Rendering image...\n";
     auto t1 = std::chrono::high_resolution_clock::now();
-    launch_render_kernel(envmap_d, camera_d, image_d, width, height, samples_per_pixel, grid, block);
+    launch_render_kernel(bvh_d, envmap_d, camera_d, image_d, width, height, samples_per_pixel, grid, block);
     gpuErrchk(cudaDeviceSynchronize());
     auto t2 = std::chrono::high_resolution_clock::now();
     auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
@@ -49,6 +104,7 @@ int main(int argc, char **argv)
 
     // Copy image data back to device
     gpuErrchk(cudaMemcpy(image_h.data, image_d, width * height * sizeof(float3), cudaMemcpyDeviceToHost));
+    gpuErrchk(cudaFree(bvh_d));
     gpuErrchk(cudaFree(envmap_d));
     gpuErrchk(cudaFree(camera_d));
     gpuErrchk(cudaFree(image_d));

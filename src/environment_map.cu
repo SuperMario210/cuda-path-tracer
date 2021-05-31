@@ -105,24 +105,23 @@ void EnvironmentMap::build_distribution(float *data)
 
     // Precompute indices for sampling
     for (size_t x = 0; x < width; x++) {
+        size_t i = 0;
         for (size_t y = 0; y < height; y++) {
             float r = (float) (y + 1) / height;
-            auto cond_cdf = &d_conditional_cdf[x * height];
-            auto y_ptr = std::lower_bound(cond_cdf, cond_cdf + height, r);
-            d_conditional_lookup[x * height + y] = y_ptr - cond_cdf;
-            if (d_conditional_lookup[x * height + y] >= height) {
-                d_conditional_lookup[x * height + y] = height - 1;
+            while (d_conditional_cdf[x * height + i] < r && i < height) {
+                i++;
             }
+            d_conditional_lookup[x * height + y] = std::min(i, height - 1);
         }
     }
 
+    size_t i = 0;
     for (size_t x = 0; x < width; x++) {
         float r = (float) (x + 1) / width;
-        auto x_ptr = std::lower_bound(d_marginal_cdf, d_marginal_cdf + width, r);
-        d_marginal_lookup[x] = x_ptr - d_marginal_cdf;
-        if (d_marginal_lookup[x] >= width) {
-            d_marginal_lookup[x] = width - 1;
+        while(d_marginal_cdf[i] < r && i < width) {
+            i++;
         }
+        d_marginal_lookup[x] = std::min(i, width - 1);
     }
 
     auto t2 = std::chrono::high_resolution_clock::now();

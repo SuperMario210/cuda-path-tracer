@@ -6,11 +6,7 @@
 #define PATHTRACER_OBJECT_H
 
 
-#include <vector>
-#include <cfloat>
-#include <memory>
-#include "ray.cuh"
-#include "util.cuh"
+#include "common.h"
 #include "material.cuh"
 
 class Sphere

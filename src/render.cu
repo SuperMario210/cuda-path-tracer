@@ -1,41 +1,17 @@
-#include <cuda_runtime.h>
-#include <vector_types.h>
 #include "camera.cuh"
-#include "object.cuh"
-#include "environment_map.h"
+#include "render.cuh"
 #include "material.cuh"
-#include <curand_kernel.h>
+#include "object.cuh"
 
 #define IMPORTANCE_SAMPLING
 #define MAX_DEPTH   16
 
-__device__ float3 sample_envmap(const EnvironmentMapData *envmap, const float3 &dir)
-{
-    auto phi = atan2f(dir.z, dir.x) * (0.5f / PI) + 0.5f;
-    auto theta = acosf(dir.y) / PI;
-    return make_float3(tex2D<float4>(envmap->texture_obj, phi, theta));
+
+__device__ float4 EnvironmentMap::sample_texture(cudaTextureObject_t texture_obj, float u, float v) {
+    return tex2D<float4>(texture_obj, u, v);
 }
 
-__device__ float3 sample_lights(const EnvironmentMapData *envmap, curandState &rand_state)
-{
-    size_t x = envmap->marginal_lookup[(size_t)(curand_uniform(&rand_state) * envmap->width - 0.5)];
-    size_t y = envmap->conditional_lookup[x * envmap->height + (size_t)(curand_uniform(&rand_state) * envmap->height - 0.5)];
-
-    auto phi = 2.0f * x * PI / envmap->width;
-    auto theta = y * PI / envmap->height;
-    auto sin_t = -sinf(theta);
-
-    return make_float3(sin_t * cosf(phi), -cosf(theta), sin_t * sinf(phi));
-}
-
-__device__ float envmap_pdf(const EnvironmentMapData *envmap, float3 &dir)
-{
-    auto phi = atan2f(dir.z, dir.x) * (0.5f / PI) + 0.5f;
-    auto theta = acosf(dir.y) / PI;
-    return tex2D<float4>(envmap->texture_obj, phi, theta).w;
-}
-
-__device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMapData *envmap)
+__device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMap *envmap)
 {
     Material plane_mat(LAMBERTIAN, make_float3(0.325, 0.3, 0.35), 0);
     Plane plane(make_float3(0), make_float3(0, 1, 0), &plane_mat);
@@ -72,10 +48,10 @@ __device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMapData 
 
             if (importance_sample) {
                 if (curand_uniform(&rand_state) < 0.5) {
-                    r_new.direction = sample_lights(envmap, rand_state);
+                    r_new.direction = envmap->sample_lights(rand_state);
                 }
 
-                float env_pdf = envmap_pdf(envmap, r_new.direction);
+                float env_pdf = envmap->pdf(r_new.direction);
                 float diff_pdf = intersect.material->pdf(r, intersect, r_new);
                 float mixed_pdf = (env_pdf + diff_pdf) * 0.5f;
                 color *= diff_pdf / mixed_pdf;
@@ -94,14 +70,14 @@ __device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMapData 
 #endif
 
         } else {
-            return color * sample_envmap(envmap, r.direction);
+            return color * envmap->sample(r.direction);
         }
     }
 
     return make_float3(0);
 }
 
-__global__ void render_kernel(EnvironmentMapData *envmap, Camera *camera, float3 *image_data, size_t width, size_t height,
+__global__ void render_kernel(EnvironmentMap *envmap, Camera *camera, float3 *image_data, size_t width, size_t height,
                               size_t samples_per_pixel)
 {
     size_t x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -123,7 +99,7 @@ __global__ void render_kernel(EnvironmentMapData *envmap, Camera *camera, float3
     image_data[i] = accum_color / samples_per_pixel;
 }
 
-__host__ void launch_render_kernel(EnvironmentMapData *envmap, Camera *camera, float3 *image_data, size_t width, size_t height,
+__host__ void launch_render_kernel(EnvironmentMap *envmap, Camera *camera, float3 *image_data, size_t width, size_t height,
                                    size_t samples_per_pixel, dim3 grid, dim3 block)
 {
     render_kernel <<< grid, block >>>(envmap, camera, image_data, width, height, samples_per_pixel);

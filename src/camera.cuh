@@ -6,9 +6,7 @@
 #define PATHTRACER_CAMERA_H
 
 
-#include "ray.cuh"
-#include "util.cuh"
-#include <curand_kernel.h>
+#include "common.h"
 
 class Camera
 {

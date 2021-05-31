@@ -3,9 +3,7 @@
 //
 
 #include <fstream>
-#include <cassert>
 #include <limits>
-#include <cmath>
 #include <iostream>
 
 #include "image.h"

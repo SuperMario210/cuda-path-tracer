@@ -1,6 +1,7 @@
 #include <iostream>
 #include <chrono>
 #include "camera.cuh"
+#include "image.h"
 #include "render.cuh"
 
 #define EXPOSURE            2.0f    // Used for tone mapping
@@ -13,11 +14,10 @@ int main(int argc, char **argv)
     const size_t samples_per_pixel = 512;
 
     // Setup environment map
-    const EnvironmentMap envmap("../background/studio.hdr");
-    EnvironmentMapData envmap_h = envmap.get_data();
-    EnvironmentMapData *envmap_d;
-    gpuErrchk(cudaMalloc(&envmap_d, sizeof(EnvironmentMapData)));
-    gpuErrchk(cudaMemcpy(envmap_d, &envmap_h, sizeof(EnvironmentMapData), cudaMemcpyHostToDevice));
+    const EnvironmentMap envmap_h("../background/studio.hdr");
+    EnvironmentMap *envmap_d;
+    gpuErrchk(cudaMalloc(&envmap_d, sizeof(EnvironmentMap)));
+    gpuErrchk(cudaMemcpy(envmap_d, &envmap_h, sizeof(EnvironmentMap), cudaMemcpyHostToDevice));
 
     // Setup camera
     float3 origin = make_float3(0, 1, 5);

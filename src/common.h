@@ -6,7 +6,12 @@
 #define PATHTRACER_UTIL_H
 
 
+#include <cuda_runtime.h>
+#include <curand_kernel.h>
 #include <iostream>
+#include "../include/cutil_math.cuh"
+#include "ray.cuh"
+
 
 #define PI          3.14159265358979323846264338327950288f
 #define EPSILON     0.001f

@@ -2,12 +2,11 @@
 // Created by Mario Ruiz on 5/20/21.
 //
 
-#include <cmath>
-#include <iostream>
 #include <chrono>
 #include <algorithm>
+#include <texture_indirect_functions.h>
 
-#include "environment_map.h"
+#include "environment_map.cuh"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "../include/stb_image.h"
@@ -167,15 +166,3 @@ void EnvironmentMap::create_texture(const float *data) {
     texture_obj = 0;
     cudaCreateTextureObject(&texture_obj, &resource_desc, &texture_desc, nullptr);
 }
-
-EnvironmentMapData EnvironmentMap::get_data() const {
-    return EnvironmentMapData {
-        width,
-        height,
-        texture_obj,
-        marginal_lookup,
-        conditional_lookup
-    };
-}
-
-

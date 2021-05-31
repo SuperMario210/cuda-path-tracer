@@ -5,9 +5,7 @@
 #ifndef CUDA_BASE_MATERIAL_CUH
 #define CUDA_BASE_MATERIAL_CUH
 
-#include "ray.cuh"
-#include "util.cuh"
-#include "object.cuh"
+#include "common.h"
 
 class Material;
 

@@ -35,7 +35,7 @@ void load_obj(const std::string &filename, std::vector<Triangle> &triangles)
             iss >> v.x >> v.y >> v.z;
             vertices.push_back(v);
         } else if (type == 'f') {
-            size_t i1, i2, i3;
+            int i1, i2, i3;
             iss >> i1 >> i2 >> i3;
             i1 = (i1 < 0) ? i1 + vertices.size() : i1;
             i2 = (i2 < 0) ? i2 + vertices.size() : i2;
@@ -56,31 +56,40 @@ void load_obj(const std::string &filename, std::vector<Triangle> &triangles)
 
 int main(int argc, char **argv)
 {
-    const size_t width = 1920 / 4;
-    const size_t height = 1080 / 4;
-    const size_t samples_per_pixel = 256;
+    const size_t width = 1920;
+    const size_t height = 1080;
+    const size_t samples_per_pixel = 64;
 
     // Setup BVH
     std::vector<Triangle> triangles;
-    load_obj("../obj/bunny_lowpoly.obj", triangles);
+    load_obj("../obj/bunny.obj", triangles);
+//    load_obj("../obj/bunny_lowpoly.obj", triangles);
     BVH bvh_h(triangles);
     BVH *bvh_d;
     gpuErrchk(cudaMalloc(&bvh_d, sizeof(BVH)));
     gpuErrchk(cudaMemcpy(bvh_d, &bvh_h, sizeof(BVH), cudaMemcpyHostToDevice));
 
     // Setup environment map
-    const EnvironmentMap envmap_h("../background/studio.hdr");
+    const EnvironmentMap envmap_h("../background/forest.hdr");
     EnvironmentMap *envmap_d;
     gpuErrchk(cudaMalloc(&envmap_d, sizeof(EnvironmentMap)));
     gpuErrchk(cudaMemcpy(envmap_d, &envmap_h, sizeof(EnvironmentMap), cudaMemcpyHostToDevice));
 
     // Setup camera
+//    float3 origin = make_float3(-1.1, 0.2, -0.8);
+//    float3 look_at = make_float3(0, 0, 0);
+//    float fov = 38;
+//    float aspect_ratio = float(width) / float(height);
+//    float aperture = 0.01;
+//    float focus_dist = 1.15; // length(look_at - origin);
+
     float3 origin = make_float3(0, 1, 5);
     float3 look_at = make_float3(0, 0.5, 0);
-    float fov = 35;
+    float fov = 38;
     float aspect_ratio = float(width) / float(height);
-    float aperture = 0.1;
-    float focus_dist = 4.75; // length(look_at - origin);
+    float aperture = 0.0;
+    float focus_dist = length(look_at - origin);
+
     Camera camera_h(origin, look_at, fov, aspect_ratio, aperture, focus_dist);
     Camera *camera_d;
     gpuErrchk(cudaMalloc(&camera_d, sizeof(Camera)));

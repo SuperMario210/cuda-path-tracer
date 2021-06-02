@@ -25,7 +25,7 @@ private:
     // TODO: figure out why we can't use tex2D in this file
     __device__ static float4 sample_texture(cudaTextureObject_t texture_obj, float u, float v);
     void build_distribution(float *data);
-    void create_texture(const float *data);
+    void send_to_device(const float *data);
 
 public:
     explicit EnvironmentMap(const std::string &filename);

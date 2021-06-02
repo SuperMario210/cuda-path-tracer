@@ -39,7 +39,7 @@ public:
     __device__ inline Ray cast_ray(float s, float t, curandState &rand_state) const
     {
         if (lens_radius < EPSILON) {
-            return {origin, bottom_left + right * s + up * t};
+            return {origin, normalize(bottom_left + right * s + up * t)};
         } else {
             float2 rd;
             do {

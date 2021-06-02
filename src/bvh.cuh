@@ -32,50 +32,19 @@ struct BVHNode {
 
 class BVH
 {
-private:
-    BVHNode *nodes;
-    Triangle *triangles;
+public:
+    float4 *triangles;
+    float4 *nodes;
+
+    cudaTextureObject_t triangles_texture;
+    cudaTextureObject_t nodes_texture;
+
+    void build(size_t start, size_t end, size_t &index, std::vector<Triangle> &h_triangles, std::vector<BVHNode> &h_nodes);
+    void send_to_device(const std::vector<Triangle> &h_triangles, const std::vector<BVHNode> &h_nodes);
 
 public:
     BVH(std::vector<Triangle> objects);
     ~BVH();
-
-    void build(size_t start, size_t end, size_t &index, std::vector<Triangle> &h_triangles, std::vector<BVHNode> &h_nodes);
-
-    __device__ bool intersect(const Ray &r, Intersection &intersect) const
-    {
-        bool hit = false;
-        float3 inv_dir = 1 / r.direction;
-//        bool is_dir_neg[3] = {inv_dir.x < 0, inv_dir.y < 0, inv_dir.z < 0};
-
-        size_t stack[32];
-        size_t stack_index = 0;
-        stack[stack_index++] = 0;
-
-        while (stack_index > 0) {
-            size_t index = stack[--stack_index];
-            const BVHNode *node = &nodes[index];
-
-            if (node->intersect(r, inv_dir, EPSILON, intersect.t)) {
-                if (node->num_children > 0) {
-                    for (auto i = 0; i < node->num_children; i++) {
-                        if (triangles[node->index + i].intersect(r, intersect)) {
-                            hit = true;
-                        }
-                    }
-                } else {
-                    stack[stack_index++] = node->index;
-                    stack[stack_index++] = index + 1;
-
-//                    stack[stack_index++] = is_dir_neg[node->axis] ? index + 1 : node->index;
-//                    stack[stack_index++] = is_dir_neg[node->axis] ? node->index : index + 1;
-                }
-            }
-        }
-
-        return hit;
-    }
-
 };
 
 

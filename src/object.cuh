@@ -83,9 +83,9 @@ class Triangle
 {
 public:
     float3 v0, v1, v2;
-    Material *material; // TODO: avoid storing per triangle
+//    Material *material; // TODO: avoid storing per triangle
 
-    Triangle(const float3 &v0, const float3 &v1, const float3 &v2) : v0(v0), v1(v1), v2(v2)
+    __host__ __device__ Triangle(const float3 &v0, const float3 &v1, const float3 &v2) : v0(v0), v1(v1), v2(v2)
     {
 
     }
@@ -125,7 +125,7 @@ public:
         intersect.t = t;
         intersect.position = r.at(intersect.t);
         intersect.set_normal(r, normalize(cross(e1, e2)));
-        intersect.material = material;
+//        intersect.material = material;
         return true;
     }
 

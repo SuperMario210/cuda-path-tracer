@@ -27,7 +27,7 @@ EnvironmentMap::EnvironmentMap(const std::string &filename)
 
     // Calculate necessary data and send to device
     build_distribution(data);
-    create_texture(data);
+    send_to_device(data);
 
     stbi_image_free(data);
 }
@@ -139,7 +139,7 @@ void EnvironmentMap::build_distribution(float *data)
     delete[] d_conditional_lookup;
 }
 
-void EnvironmentMap::create_texture(const float *data) {
+void EnvironmentMap::send_to_device(const float *data) {
     // Create cuda array to hold texture data
     const size_t width_bytes = width * 4 * sizeof(float);
     cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
@@ -163,5 +163,5 @@ void EnvironmentMap::create_texture(const float *data) {
 
     // Create texture object
     texture_obj = 0;
-    cudaCreateTextureObject(&texture_obj, &resource_desc, &texture_desc, nullptr);
+    gpuErrchk(cudaCreateTextureObject(&texture_obj, &resource_desc, &texture_desc, nullptr));
 }

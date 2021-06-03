@@ -62,8 +62,8 @@ int main(int argc, char **argv)
 
     // Setup BVH
     std::vector<Triangle> triangles;
-    load_obj("../obj/bunny.obj", triangles);
-//    load_obj("../obj/bunny_lowpoly.obj", triangles);
+//    load_obj("../obj/bunny.obj", triangles);
+    load_obj("../obj/bunny_lowpoly.obj", triangles);
     BVH bvh_h(triangles);
     BVH *bvh_d;
     gpuErrchk(cudaMalloc(&bvh_d, sizeof(BVH)));

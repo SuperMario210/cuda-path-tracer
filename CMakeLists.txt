@@ -14,7 +14,7 @@ file(GLOB_RECURSE CUDA_SRCS CONFIGURE_DEPENDS
 add_library(cuda_base ${CUDA_SRCS})
 target_compile_features(cuda_base PUBLIC cxx_std_14)
 set_target_properties( cuda_base PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_30,code=sm_30")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_30,code=sm_30 -lineinfo")
 
 # Setup PathTracer project
 file(GLOB_RECURSE CPP_SRCS CONFIGURE_DEPENDS

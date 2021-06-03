@@ -263,8 +263,8 @@ __device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMap *env
 //    Material sphere4_mat(GLOSSY, make_float3(0.15, 0.25, 0.4), 0.05);
 //    Sphere sphere4(make_float3(2.025, 0.5, 0), 0.5, &sphere4_mat);
 
-//    Material bvh_mat(GLOSSY, make_float3(0.65, 0.65, 0.65), 0.05);
-    Material bvh_mat(GLASS, make_float3(1), 1.5);
+    Material bvh_mat(LAMBERTIAN, make_float3(0.65, 0.65, 0.65), 0.05);
+//    Material bvh_mat(GLASS, make_float3(1), 1.5);
 
     float3 color = make_float3(1);
     for (int depth = 0; depth < MAX_DEPTH; depth++) {

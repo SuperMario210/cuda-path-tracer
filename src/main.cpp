@@ -56,14 +56,14 @@ void load_obj(const std::string &filename, std::vector<Triangle> &triangles)
 
 int main(int argc, char **argv)
 {
-    const size_t width = 1920;
-    const size_t height = 1080;
+    const size_t width = 1920/2;
+    const size_t height = 1080/2;
     const size_t samples_per_pixel = 64;
 
     // Setup BVH
     std::vector<Triangle> triangles;
-//    load_obj("../obj/bunny.obj", triangles);
-    load_obj("../obj/bunny_lowpoly.obj", triangles);
+    load_obj("../obj/bunny.obj", triangles);
+//    load_obj("../obj/bunny_lowpoly.obj", triangles);
     BVH bvh_h(triangles);
     BVH *bvh_d;
     gpuErrchk(cudaMalloc(&bvh_d, sizeof(BVH)));
@@ -99,13 +99,16 @@ int main(int argc, char **argv)
     Image image_h(width, height);
     float3 *image_d;
     gpuErrchk(cudaMalloc(&image_d, width * height * sizeof(float3)));
+    Path *paths, *next_paths;
+    gpuErrchk(cudaMalloc(&paths, 4 * width * height * sizeof(Path)));
+    gpuErrchk(cudaMalloc(&next_paths, 4 * width * height * sizeof(Path)));
     dim3 block(8, 8, 1);
     dim3 grid(width / block.x, height / block.y, 1);
 
     // Run render kernel
     std::cout << "Rendering image...\n";
     auto t1 = std::chrono::high_resolution_clock::now();
-    launch_render_kernel(bvh_d, envmap_d, camera_d, image_d, width, height, samples_per_pixel, grid, block);
+    launch_render_kernel(bvh_d, envmap_d, camera_d, image_d, width, height, samples_per_pixel, grid, block, paths, next_paths);
     gpuErrchk(cudaDeviceSynchronize());
     auto t2 = std::chrono::high_resolution_clock::now();
     auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);

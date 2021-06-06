@@ -8,6 +8,8 @@
 
 #include "common.h"
 
+template <class T> __device__ T tex2D(cudaTextureObject_t texObject, float x, float y);
+
 class EnvironmentMap
 {
 private:
@@ -22,8 +24,6 @@ private:
     size_t *marginal_lookup;
     size_t *conditional_lookup;
 
-    // TODO: figure out why we can't use tex2D in this file
-    __device__ static float4 sample_texture(cudaTextureObject_t texture_obj, float u, float v);
     void build_distribution(float *data);
     void send_to_device(const float *data);
 
@@ -35,7 +35,7 @@ public:
     {
         auto phi = atan2f(dir.z, dir.x) * (0.5f / PI) + 0.5f;
         auto theta = acosf(dir.y) / PI;
-        return make_float3(sample_texture(texture_obj, phi, theta));
+        return make_float3(tex2D<float4>(texture_obj, phi, theta));
     }
 
     __device__ inline float3 sample_lights(curandState &rand_state)
@@ -54,7 +54,7 @@ public:
     {
         auto phi = atan2f(dir.z, dir.x) * (0.5f / PI) + 0.5f;
         auto theta = acosf(dir.y) / PI;
-        return sample_texture(texture_obj, phi, theta).w;
+        return tex2D<float4>(texture_obj, phi, theta).w;
     }
 };
 

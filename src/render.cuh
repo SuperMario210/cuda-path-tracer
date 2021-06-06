@@ -5,6 +5,7 @@
 #ifndef CUDA_PATH_TRACER_KERNEL_CUH
 #define CUDA_PATH_TRACER_KERNEL_CUH
 
+#include <cooperative_groups.h>
 #include "common.h"
 #include "environment_map.cuh"
 #include "bvh.cuh"
@@ -26,7 +27,15 @@ struct Queue
     uint index[MAX_PATHS];
     uint size;
 
-    __device__ __inline__ void add(uint idx);
+    __device__ __inline__ void add(uint idx) {
+        auto g = cooperative_groups::coalesced_threads();
+        int warp_res;
+        if(g.thread_rank() == 0)
+            warp_res = atomicAdd(&size, g.size());
+
+        int i = g.shfl(warp_res, 0) + g.thread_rank();
+        index[i] = idx;
+    }
 };
 
 __host__ void launch_render_kernel(BVH *bvh, EnvironmentMap *envmap, Camera *camera, float3 *image_data, size_t width,

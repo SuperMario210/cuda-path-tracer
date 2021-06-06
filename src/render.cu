@@ -1,26 +1,11 @@
-#include <cooperative_groups.h>
 #include "camera.cuh"
 #include "render.cuh"
-#include "material.cuh"
-#include "object.cuh"
 
 #define IMPORTANCE_SAMPLING
 #define MAX_DEPTH               16
 #define STACK_SIZE              64
 #define ENTRYPOINT_SENTINEL     0x76543210
 #define FULL_MASK               0xffffffff
-#define DYNAMIC_FETCH_THRESHOLD 20          // If fewer than this active, fetch new rays
-
-
-__device__ __inline__ void Queue::add(uint idx) {
-    auto g = cooperative_groups::coalesced_threads();
-    int warp_res;
-    if(g.thread_rank() == 0)
-        warp_res = atomicAdd(&size, g.size());
-
-    int i = g.shfl(warp_res, 0) + g.thread_rank();
-    index[i] = idx;
-}
 
 __device__ __inline__ int   min_min(int a, int b, int c) { int v; asm("vmin.s32.s32.s32.min %0, %1, %2, %3;" : "=r"(v) : "r"(a), "r"(b), "r"(c)); return v; }
 __device__ __inline__ int   min_max(int a, int b, int c) { int v; asm("vmin.s32.s32.s32.max %0, %1, %2, %3;" : "=r"(v) : "r"(a), "r"(b), "r"(c)); return v; }

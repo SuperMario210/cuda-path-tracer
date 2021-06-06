@@ -8,8 +8,6 @@
 
 #include "common.h"
 
-template <class T> __device__ T tex2D(cudaTextureObject_t texObject, float x, float y);
-
 class EnvironmentMap
 {
 private:

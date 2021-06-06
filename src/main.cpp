@@ -106,6 +106,14 @@ int main(int argc, char **argv)
     gpuErrchk(cudaMalloc(&new_paths, sizeof(Queue)));
     gpuErrchk(cudaMalloc(&diffuse_paths, sizeof(Queue)));
 
+    auto *temp = new Queue;
+    temp->size = MAX_PATHS;
+    for (uint i = 0; i < MAX_PATHS; i++) {
+        temp->index[i] = i;
+    }
+    cudaMemcpy(new_paths, temp, sizeof(Queue), cudaMemcpyHostToDevice);
+    delete temp;
+
     dim3 block(8, 8, 1);
     dim3 grid(width / block.x, height / block.y, 1);
 

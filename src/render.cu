@@ -2,7 +2,7 @@
 #include "render.cuh"
 
 #define IMPORTANCE_SAMPLING
-//#define RUSSIAN_ROULETTE
+#define RUSSIAN_ROULETTE
 #define MIN_DEPTH               3
 #define MAX_DEPTH               16
 
@@ -130,19 +130,29 @@ __global__ void generate_diffuse_paths(EnvironmentMap *envmap, PathData *paths, 
     curand_init(seed + index, 0, 0, &rand_state);
 
     float3 norm = make_float3(paths->normal[index]);
+    float3 in_dir = make_float3(paths->direction[index]);
+
+    float3 offset = in_dir * paths->direction[index].w;
+    paths->origin[index] += make_float4(offset);
+
+#ifdef IMPORTANCE_SAMPLING
+
     float3 out_dir = (curand_uniform(&rand_state) < 0.5) ? diffuse(norm, rand_state) : envmap->sample_lights(rand_state);
-
-    float4 dir = paths->direction[index];
-    dir *= dir.w;
-    dir.w = 0;
-
-    paths->origin[index] += dir;
     paths->direction[index] = make_float4(out_dir, FLT_MAX);
 
     float env_pdf = envmap->pdf(out_dir);
     float diff_pdf = max(dot(norm, out_dir) / PI, 0.0f);
     float mixed_pdf = (env_pdf + diff_pdf) * 0.5f;
     paths->throughput[index] *= paths->material[index] * (diff_pdf / mixed_pdf);
+
+#else
+
+    float3 out_dir = diffuse(norm, rand_state);
+    paths->direction[index] = make_float4(out_dir, FLT_MAX);
+    paths->throughput[index] *= paths->material[index];
+
+#endif
+
     paths->set_flag(index, IS_ACTIVE);
 }
 

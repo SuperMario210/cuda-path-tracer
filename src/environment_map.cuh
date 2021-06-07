@@ -41,13 +41,11 @@ public:
         size_t x = marginal_lookup[(size_t)(curand_uniform(&rand_state) * width - 0.5)];
         size_t y = conditional_lookup[x * height + (size_t)(curand_uniform(&rand_state) * height - 0.5)];
 
-        float phi = 2.0f * x * PI / width;
-        float theta = y * PI / height;
-        float sin_t = -__sinf(theta);
-        float sin_p = __sinf(phi);
-        float cos_p = sqrtf(1.0f - sin_p * sin_p);
+        auto phi = 2.0f * x * PI / width;
+        auto theta = y * PI / height;
+        auto sin_t = -sinf(theta);
 
-        return make_float3(sin_t * cos_p, -__cosf(theta), sin_t * sin_p);
+        return make_float3(sin_t * cosf(phi), -cosf(theta), sin_t * sinf(phi));
     }
 
     __device__ inline float pdf(float3 &dir)

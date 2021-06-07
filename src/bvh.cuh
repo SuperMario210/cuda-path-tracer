@@ -60,6 +60,8 @@ class BVH
 public:
     float4 *triangles;
     float4 *nodes;
+    float4 material = make_float4(0.65);
+    uint material_type = 0x8;
 
     cudaTextureObject_t nodes_texture;
 
@@ -70,7 +72,8 @@ public:
     BVH(std::vector<Triangle> objects);
     ~BVH();
 
-    __device__ __inline__ void intersect(const float3 &o, const float3 &d, float &t_max, float3 &n)
+    __device__ __inline__
+    void intersect(const float3 &o, const float3 &d, float &t_max, float3 &n, float4 &mat, uint &mat_type) const
     {
         // Traversal stack in CUDA thread-local memory.
         int traversalStack[STACK_SIZE];
@@ -161,6 +164,8 @@ public:
                                 // Record intersection.
                                 t_max = t;
                                 n = cross(make_float3(v11.x, v11.y, v11.z), make_float3(v22.x, v22.y, v22.z));
+                                mat = material;
+                                mat_type = material_type;
                             }
                         }
                     }

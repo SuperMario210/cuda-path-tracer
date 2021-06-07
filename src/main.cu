@@ -56,7 +56,7 @@ int main(int argc, char **argv)
 {
     const size_t width = 1920;
     const size_t height = 1080;
-    const size_t samples_per_pixel = 64;
+    const size_t samples_per_pixel = 512;
 
     // Setup BVH
     std::vector<Triangle> triangles;
@@ -83,10 +83,10 @@ int main(int argc, char **argv)
 
     float3 origin = make_float3(0, 1, 5);
     float3 look_at = make_float3(0, 0.5, 0);
-    float fov = 38;
+    float fov = 35;
     float aspect_ratio = float(width) / float(height);
-    float aperture = 0.0;
-    float focus_dist = length(look_at - origin);
+    float aperture = 0.1;
+    float focus_dist = 4.75;
 
     Camera camera_h(origin, look_at, fov, aspect_ratio, aperture, focus_dist);
     Camera *camera_d;

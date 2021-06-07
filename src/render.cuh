@@ -12,8 +12,11 @@
 
 #define MAX_PATHS   0x100000
 #define IS_ACTIVE   0x1
-#define IS_DIFFUSE  0x2
-#define IS_NEW_PATH 0x4
+#define IS_NEW_PATH 0x2
+#define IS_DIFFUSE  0x4
+#define IS_MIRROR   0x8
+#define IS_GLOSSY   0x10
+#define IS_GLASS    0x20
 
 
 struct PathData
@@ -23,6 +26,7 @@ struct PathData
     float4 normal[MAX_PATHS];
     float4 direction[MAX_PATHS];
     float4 throughput[MAX_PATHS];
+    float4 material[MAX_PATHS];
     uint depth[MAX_PATHS];
     uint flags[MAX_PATHS];
 

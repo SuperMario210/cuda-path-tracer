@@ -60,7 +60,7 @@ int main(int argc, char **argv)
 
     // Setup BVH
     std::vector<Triangle> triangles;
-    load_obj("../obj/bunny.obj", triangles);
+    load_obj("../obj/dragon.obj", triangles);
 //    load_obj("../obj/bunny_lowpoly.obj", triangles);
     BVH bvh_h(triangles);
     BVH *bvh_d;
@@ -68,25 +68,25 @@ int main(int argc, char **argv)
     gpuErrchk(cudaMemcpy(bvh_d, &bvh_h, sizeof(BVH), cudaMemcpyHostToDevice));
 
     // Setup environment map
-    const EnvironmentMap envmap_h("../background/forest.hdr");
+    const EnvironmentMap envmap_h("../background/studio.hdr");
     EnvironmentMap *envmap_d;
     gpuErrchk(cudaMalloc(&envmap_d, sizeof(EnvironmentMap)));
     gpuErrchk(cudaMemcpy(envmap_d, &envmap_h, sizeof(EnvironmentMap), cudaMemcpyHostToDevice));
 
     // Setup camera
-//    float3 origin = make_float3(-1.1, 0.2, -0.8);
-//    float3 look_at = make_float3(0, 0, 0);
-//    float fov = 38;
-//    float aspect_ratio = float(width) / float(height);
-//    float aperture = 0.01;
-//    float focus_dist = 1.15; // length(look_at - origin);
-
-    float3 origin = make_float3(0, 1, 5);
-    float3 look_at = make_float3(0, 0.5, 0);
+    float3 origin = make_float3(-1.1, 0.2, -0.8);
+    float3 look_at = make_float3(0, 0, 0);
     float fov = 38;
     float aspect_ratio = float(width) / float(height);
-    float aperture = 0.0;
-    float focus_dist = length(look_at - origin);
+    float aperture = 0.01;
+    float focus_dist = 1.15; // length(look_at - origin);
+
+//    float3 origin = make_float3(0, 1, 5);
+//    float3 look_at = make_float3(0, 0.5, 0);
+//    float fov = 38;
+//    float aspect_ratio = float(width) / float(height);
+//    float aperture = 0.0;
+//    float focus_dist = length(look_at - origin);
 
     Camera camera_h(origin, look_at, fov, aspect_ratio, aperture, focus_dist);
     Camera *camera_d;
@@ -97,20 +97,8 @@ int main(int argc, char **argv)
     Image image_h(width, height);
     float3 *image_d;
     gpuErrchk(cudaMalloc(&image_d, width * height * sizeof(float3)));
-    PathQueue *paths;
-    gpuErrchk(cudaMalloc(&paths, sizeof(PathQueue)));
-
-    Queue *new_paths, *diffuse_paths;
-    gpuErrchk(cudaMalloc(&new_paths, sizeof(Queue)));
-    gpuErrchk(cudaMalloc(&diffuse_paths, sizeof(Queue)));
-
-    auto *temp = new Queue;
-    temp->size = MAX_PATHS;
-    for (uint i = 0; i < MAX_PATHS; i++) {
-        temp->index[i] = i;
-    }
-    cudaMemcpy(new_paths, temp, sizeof(Queue), cudaMemcpyHostToDevice);
-    delete temp;
+    PathData *paths;
+    gpuErrchk(cudaMalloc(&paths, sizeof(PathData)));
 
     dim3 block(8, 8, 1);
     dim3 grid(width / block.x, height / block.y, 1);
@@ -118,7 +106,7 @@ int main(int argc, char **argv)
     // Run render kernel
     std::cout << "Rendering image...\n";
     auto t1 = std::chrono::high_resolution_clock::now();
-    launch_render_kernel(bvh_d, envmap_d, camera_d, image_d, width, height, samples_per_pixel, grid, block, paths, new_paths, diffuse_paths);
+    launch_render_kernel(bvh_d, envmap_d, camera_d, image_d, width, height, samples_per_pixel, grid, block, paths);
     gpuErrchk(cudaDeviceSynchronize());
     auto t2 = std::chrono::high_resolution_clock::now();
     auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);

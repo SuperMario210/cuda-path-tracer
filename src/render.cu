@@ -337,14 +337,15 @@ __global__ void render_kernel(BVH *bvh, EnvironmentMap *envmap, Camera *camera, 
     image_data[i] = accum_color / samples_per_pixel;
 }
 
-__global__ void intersect_scene(BVH *bvh, PathQueue *paths, uint num_paths)
+__global__ void intersect_scene(BVH *bvh, PathData *paths)
 {
     const uint index = blockDim.x * blockIdx.x + threadIdx.x;
-    if (index >= num_paths) return;
+    if (index >= MAX_PATHS || !paths->get_flag(index, IS_ACTIVE)) return;
 
     // Load ray data
-    float4 o = paths->origin[index];
-    float4 d = paths->direction[index];
+    const uint path_index = index;
+    float4 o = paths->origin[path_index];
+    float4 d = paths->direction[path_index];
     float3 n;
     float t_min  = o.w;
     float t_max  = d.w;
@@ -460,8 +461,8 @@ __global__ void intersect_scene(BVH *bvh, PathQueue *paths, uint num_paths)
         } // leaf
     } // traversal
 
-    paths->direction[index].w = t_max;
-    paths->normal[index] = make_float4(n);
+    paths->direction[path_index].w = t_max;
+    paths->normal[path_index] = make_float4(normalize(n));
 }
 
 __device__ __inline__ float3 diffuse(const float3 &n, curandState &rand_state) {
@@ -479,40 +480,47 @@ __device__ __inline__ float3 diffuse(const float3 &n, curandState &rand_state) {
     return normalize(dir);
 }
 
-__global__ void logic_kernel(PathQueue *paths, EnvironmentMap *envmap, float3 *image_data, uint samples_per_pixel,
-                             Queue *new_paths, Queue *diffuse_paths)
+__device__ bool g_is_working = false;
+
+__global__ void logic_kernel(PathData *paths, EnvironmentMap *envmap, float3 *image_data, uint samples_per_pixel)
 {
-    const uint index = blockDim.x * blockIdx.x + threadIdx.x;
-    if (index >= MAX_PATHS) return;
+    uint index = blockDim.x * blockIdx.x + threadIdx.x;
+    if (index >= MAX_PATHS || !paths->get_flag(index, IS_ACTIVE)) return;
+
+    paths->flags[index] = 0;
+    g_is_working = true;
 
     // TERMINATE PATH
     if (paths->direction[index].w == FLT_MAX || paths->depth[index]++ >= MAX_DEPTH) {
-        uint i = paths->pixel_index[index];
+        uint pixel_index = paths->pixel_index[index];
         float3 color = make_float3(paths->throughput[index]) * envmap->sample(make_float3(paths->direction[index])) / samples_per_pixel;
-        atomicAdd(&image_data[i].x, color.x);
-        atomicAdd(&image_data[i].y, color.y);
-        atomicAdd(&image_data[i].z, color.z);
+        atomicAdd(&image_data[pixel_index].x, color.x);
+        atomicAdd(&image_data[pixel_index].y, color.y);
+        atomicAdd(&image_data[pixel_index].z, color.z);
 
-        new_paths->add(index);
+        paths->set_flag(index, IS_NEW_PATH);
     } else {
         // TODO: check actual material
-        diffuse_paths->add(index);
+        paths->set_flag(index, IS_DIFFUSE);
     }
 }
 
+__device__ uint g_path_count = 0;
+
 __global__ void generate_primary_paths(Camera *camera, uint width, uint height, uint samples_per_pixel, uint path_count,
-                                       PathQueue *paths, Queue *new_paths, int seed)
+                                       PathData *paths, int seed, bool override)
 {
     const uint index = blockDim.x * blockIdx.x + threadIdx.x;
-    if (index >= new_paths->size) return;
+//    if (index >= MAX_PATHS || !paths->get_flag(index, IS_NEW_PATH)) return;
 
-    const uint global_index = (path_count + index) / samples_per_pixel;
+    if (index >= MAX_PATHS || (!override && !paths->get_flag(index, IS_NEW_PATH))) return;
+
+    const uint global_index = atomicAdd(&g_path_count, 1) / samples_per_pixel;
     if (global_index >= width * height) return;
 
     curandState rand_state;
     curand_init(seed + index, 0, 0, &rand_state);
 
-    const uint i = new_paths->index[index];
     const uint x = (global_index) % width;
     const uint y = (global_index / width) % height;
 
@@ -520,63 +528,67 @@ __global__ void generate_primary_paths(Camera *camera, uint width, uint height, 
     const float v = (float(y) + curand_uniform(&rand_state) - .5f) / float(height - 1);
 
     Ray r = camera->cast_ray(u, v, rand_state);
-    paths->pixel_index[i] = (height - y - 1) * width + x;
-    paths->origin[i] = make_float4(r.origin, EPSILON);
-    paths->direction[i] = make_float4(r.direction, FLT_MAX);
-    paths->throughput[i] = make_float4(1);
-    paths->depth[i] = 0;
+    paths->pixel_index[index] = (height - y - 1) * width + x;
+    paths->origin[index] = make_float4(r.origin, EPSILON);
+    paths->direction[index] = make_float4(r.direction, FLT_MAX);
+    paths->throughput[index] = make_float4(1);
+    paths->depth[index] = 0;
+    paths->set_flag(index, IS_ACTIVE);
 }
 
-__global__ void generate_diffuse_paths(EnvironmentMap *envmap, PathQueue *paths, Queue *diffuse_paths, int seed)
+__global__ void generate_diffuse_paths(EnvironmentMap *envmap, PathData *paths, int seed)
 {
-    const uint index = blockDim.x * blockIdx.x + threadIdx.x;
-    if (index >= diffuse_paths->size) return;
-
-    const uint i = diffuse_paths->index[index];
+    uint index = blockDim.x * blockIdx.x + threadIdx.x;
+    if (index >= MAX_PATHS || !paths->get_flag(index, IS_DIFFUSE)) return;
 
     curandState rand_state;
     curand_init(seed + index, 0, 0, &rand_state);
 
-    float3 norm = normalize(make_float3(paths->normal[i]));
+    float3 norm = make_float3(paths->normal[index]);
     float3 out_dir = (curand_uniform(&rand_state) < 0.5) ? diffuse(norm, rand_state) : envmap->sample_lights(rand_state);
-    paths->origin[i] += paths->direction[i] * paths->direction[i].w;
-    paths->origin[i].w = EPSILON;
-    paths->direction[i] = make_float4(out_dir, FLT_MAX);
+
+    float4 dir = paths->direction[index];
+    dir *= dir.w;
+    dir.w = 0;
+
+    paths->origin[index] += dir;
+    paths->direction[index] = make_float4(out_dir, FLT_MAX);
 
     float env_pdf = envmap->pdf(out_dir);
     float diff_pdf = max(dot(norm, out_dir) / PI, 0.0f);
     float mixed_pdf = (env_pdf + diff_pdf) * 0.5f;
-    paths->throughput[i] *= make_float4(0.65f * diff_pdf / mixed_pdf);
+    paths->throughput[index] *= make_float4(0.65f * diff_pdf / mixed_pdf);
+    paths->set_flag(index, IS_ACTIVE);
 }
 
 
 __host__ void launch_render_kernel(BVH *bvh, EnvironmentMap *envmap, Camera *camera, float3 *image_data, size_t width,
-                                   size_t height, size_t samples_per_pixel, dim3 grid, dim3 block, PathQueue *paths, Queue *new_paths, Queue *diffuse_paths)
+                                   size_t height, size_t samples_per_pixel, dim3 grid, dim3 block, PathData *paths)
 {
 //    render_kernel <<< grid, block >>>(bvh, envmap, camera, image_data, width, height, samples_per_pixel);
 //    return;
 
     const uint block_size = 64 * 2;
     const uint grid_size = (MAX_PATHS + block_size - 1) / block_size;
-    const uint total_paths = width * height * samples_per_pixel;
 
     uint path_count = 0;
     int i = 1021;
 
+    bool is_working = false;
+    bool override = true;
     do {
-        uint num_new_paths = new_paths->get_size();
-        if (num_new_paths > 0) {
-            generate_primary_paths<<<grid_size, block_size>>>(camera, width, height, samples_per_pixel,
-                                                              path_count, paths, new_paths, i++);
-            new_paths->clear();
-            path_count += num_new_paths;
-        }
+        generate_primary_paths<<<grid_size, block_size>>>(camera, width, height, samples_per_pixel,
+                                                          path_count, paths, i++, override);
 
-        generate_diffuse_paths<<<grid_size, block_size>>>(envmap, paths, diffuse_paths, i++);
-        diffuse_paths->clear();
+        generate_diffuse_paths<<<grid_size, block_size>>>(envmap, paths, rand());
 
-        intersect_scene<<<grid_size, block_size>>>(bvh, paths, MAX_PATHS);
+        intersect_scene<<<grid_size, block_size>>>(bvh, paths);
 
-        logic_kernel<<<grid_size, block_size>>>(paths, envmap, image_data, samples_per_pixel, new_paths, diffuse_paths);
-    } while (path_count < total_paths);
+        logic_kernel<<<grid_size, block_size>>>(paths, envmap, image_data, samples_per_pixel);
+        override = false;
+
+        bool temp = false;
+        gpuErrchk(cudaMemcpyFromSymbol(&is_working, g_is_working, sizeof(bool)));
+        gpuErrchk(cudaMemcpyToSymbol(g_is_working, &temp, sizeof(bool)));
+    } while (is_working);
 }

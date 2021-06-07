@@ -11,8 +11,12 @@
 #include "bvh.cuh"
 
 #define MAX_PATHS   0x100000
+#define IS_ACTIVE   0x1
+#define IS_DIFFUSE  0x2
+#define IS_NEW_PATH 0x4
 
-struct PathQueue
+
+struct PathData
 {
     uint pixel_index[MAX_PATHS];
     float4 origin[MAX_PATHS];
@@ -20,35 +24,25 @@ struct PathQueue
     float4 direction[MAX_PATHS];
     float4 throughput[MAX_PATHS];
     uint depth[MAX_PATHS];
-};
+    uint flags[MAX_PATHS];
 
-struct Queue
-{
-    uint index[MAX_PATHS];
-    uint size;
-
-    __device__ __inline__ void add(uint idx) {
-        auto g = cooperative_groups::coalesced_threads();
-        int warp_res;
-        if(g.thread_rank() == 0)
-            warp_res = atomicAdd(&size, g.size());
-
-        int i = g.shfl(warp_res, 0) + g.thread_rank();
-        index[i] = idx;
+    __device__ __inline__ bool get_flag(const uint index, const uint flag)
+    {
+        return flags[index] & flag;
     }
 
-    __host__ void clear() {
-        cudaMemset(&size, 0, sizeof(uint));
+    __device__ __inline__ void set_flag(const uint index, const uint flag)
+    {
+        flags[index] |= flag;
     }
 
-    __host__ uint get_size() {
-        uint h_size;
-        cudaMemcpy(&h_size, &size, sizeof(uint), cudaMemcpyDeviceToHost);
-        return h_size;
+    __device__ __inline__ void clear_flag(const uint index, const uint flag)
+    {
+        flags[index] &= ~flag;
     }
 };
 
 __host__ void launch_render_kernel(BVH *bvh, EnvironmentMap *envmap, Camera *camera, float3 *image_data, size_t width,
-                                   size_t height, size_t samples_per_pixel, dim3 grid, dim3 block, PathQueue *paths, Queue *new_paths, Queue *diffuse_paths);
+                                   size_t height, size_t samples_per_pixel, dim3 grid, dim3 block, PathData *paths);
 
 #endif //CUDA_PATH_TRACER_KERNEL_CUH

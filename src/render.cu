@@ -12,30 +12,28 @@ __global__ void intersect_scene(BVH *bvh, PathData *paths)
     if (index >= MAX_PATHS || !paths->get_flag(index, IS_ACTIVE)) return;
 
     // Load ray data
-    const uint path_index = index;
-    float4 o = paths->origin[path_index];
-    float4 d = paths->direction[path_index];
+    const float3 o = make_float3(paths->origin[index]);
+    const float3 d = make_float3(paths->direction[index]);
+    float t_max = FLT_MAX;
     float3 n;
-    float t_min  = o.w;
-    float t_max  = d.w;
 
     // Intersect planes
-    const float3 normal = make_float3(0, 1, 0);
     const float3 position = make_float3(0, -0.283, 0);
+    const float3 normal = make_float3(0, 1, 0);
+    const Plane plane(position, normal);
+    plane.intersect(o, d, t_max, n);
 
-    float det = dot(make_float3(d), normal);
-    if (det > EPSILON || det < -EPSILON) {
-        auto t = dot(position - make_float3(o), normal) / det;
-        if (t > t_min && t < t_max) {
-            t_max = t;
-            n = normal;
-        }
-    }
+    // Intersect spheres
+    const float3 origin = make_float3(2, 0.5, 0);
+    const float radius = 0.5;
+    const Sphere sphere(origin, radius);
+    sphere.intersect(o, d, t_max, n);
 
-    bvh->intersect(o, d, t_min, t_max, n);
+    // Intersect triangles
+    bvh->intersect(o, d, t_max, n);
 
-    paths->direction[path_index].w = t_max;
-    paths->normal[path_index] = make_float4(normalize(n));
+    paths->direction[index].w = t_max;
+    paths->normal[index] = make_float4(normalize(n));
 }
 
 __device__ __inline__ float3 diffuse(const float3 &n, curandState &rand_state) {
@@ -66,7 +64,6 @@ __global__ void logic_kernel(PathData *paths, EnvironmentMap *envmap, float3 *im
     curandState rand_state;
     curand_init(seed + index, 0, 0, &rand_state);
 
-
     // Background intersection
     if (paths->direction[index].w == FLT_MAX) {
         uint pixel_index = paths->pixel_index[index];
@@ -75,7 +72,7 @@ __global__ void logic_kernel(PathData *paths, EnvironmentMap *envmap, float3 *im
         atomicAdd(&image_data[pixel_index].y, color.y);
         atomicAdd(&image_data[pixel_index].z, color.z);
 
-        paths->set_flag(index, IS_NEW_PATH);
+        paths->flags[index] = IS_NEW_PATH;
         return;
     }
 
@@ -88,7 +85,7 @@ __global__ void logic_kernel(PathData *paths, EnvironmentMap *envmap, float3 *im
         float4 throughput = paths->throughput[index];
         float p = fmaxf(throughput.x, fmaxf(throughput.y, throughput.z));
         if (curand_uniform(&rand_state) > p) {
-            paths->set_flag(index, IS_NEW_PATH);
+            paths->flags[index] = IS_NEW_PATH;
             return;
         }
         paths->throughput[index] *= 1 / p;
@@ -159,20 +156,15 @@ __global__ void generate_diffuse_paths(EnvironmentMap *envmap, PathData *paths, 
 __host__ void launch_render_kernel(BVH *bvh, EnvironmentMap *envmap, Camera *camera, float3 *image_data, size_t width,
                                    size_t height, size_t samples_per_pixel, dim3 grid, dim3 block, PathData *paths)
 {
-//    render_kernel <<< grid, block >>>(bvh, envmap, camera, image_data, width, height, samples_per_pixel);
-//    return;
-
-    const uint block_size = 64 * 2;
+    const uint block_size = 128;
     const uint grid_size = (MAX_PATHS + block_size - 1) / block_size;
 
     uint path_count = 0;
-    int i = 1021;
-
     bool is_working = false;
     bool override = true;
     do {
         generate_primary_paths<<<grid_size, block_size>>>(camera, width, height, samples_per_pixel,
-                                                          path_count, paths, i++, override);
+                                                          path_count, paths, rand(), override);
 
         generate_diffuse_paths<<<grid_size, block_size>>>(envmap, paths, rand());
 

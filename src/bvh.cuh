@@ -24,25 +24,35 @@ __device__ __inline__ float spanBeginKepler(float a0, float a1, float b0, float 
 __device__ __inline__ float spanEndKepler(float a0, float a1, float b0, float b1, float c0, float c1, float d)	{ return fmin_fmin(fmaxf(a0, a1), fmaxf(b0, b1), fmax_fmin(c0, c1, d)); }
 __device__ __inline__ void swap(int& a, int& b){ int temp = a; a = b; b = temp;}
 
+
+struct Triangle
+{
+public:
+    float3 v0, v1, v2;
+
+    __host__ Triangle(const float3 &v0, const float3 &v1, const float3 &v2) : v0(v0), v1(v1), v2(v2)
+    {
+
+    }
+
+    AABB bounding_box() const
+    {
+        float3 min = fminf(fminf(v0, v1), v2);
+        float3 max = fmaxf(fmaxf(v0, v1), v2);
+
+        if (max.x - min.x == 0) max.x += EPSILON;
+        if (max.y - min.y == 0) max.y += EPSILON;
+        if (max.z - min.z == 0) max.z += EPSILON;
+
+        return {min, max};
+    }
+};
+
 struct BVHNode {
     AABB aabb;
     size_t index;
     uint8_t num_children = 0;
     uint8_t axis = 0;
-
-    __device__ inline bool intersect(Ray r, float3 inv_dir, float t_min, float t_max) const
-    {
-        float3 t0 = (aabb.min - r.origin) * inv_dir;
-        float3 t1 = (aabb.max - r.origin) * inv_dir;
-
-        float3 tsmaller = fminf(t0, t1);
-        float3 tbigger  = fmaxf(t0, t1);
-
-        t_min = fmaxf(t_min, fmaxf(tsmaller.x, fmaxf(tsmaller.y, tsmaller.z)));
-        t_max = fminf(t_max, fminf(tbigger.x, fminf(tbigger.y, tbigger.z)));
-
-        return (t_min < t_max);
-    }
 };
 
 class BVH
@@ -60,7 +70,7 @@ public:
     BVH(std::vector<Triangle> objects);
     ~BVH();
 
-    __device__ __inline__ void intersect(const float4 &o, const float4 &d, const float t_min, float &t_max, float3 &n)
+    __device__ __inline__ void intersect(const float3 &o, const float3 &d, float &t_max, float3 &n)
     {
         // Traversal stack in CUDA thread-local memory.
         int traversalStack[STACK_SIZE];
@@ -68,8 +78,8 @@ public:
         // Live state during traversal, stored in registers.
         int stackPtr = 0;
         int node_addr = 0;
-        float3 idir = 1.0f / make_float3(d);
-        float3 ood  = idir * make_float3(o);
+        float3 idir = 1.0f / d;
+        float3 ood  = idir * o;
 
         // Traversal loop.
         while(stackPtr >= 0) {
@@ -90,13 +100,13 @@ public:
                 const float c0hiz = nz.y   * idir.z - ood.z;
                 const float c1loz = nz.z   * idir.z - ood.z;
                 const float c1hiz = nz.w   * idir.z - ood.z;
-                const float c0min = spanBeginKepler(c0lox, c0hix, c0loy, c0hiy, c0loz, c0hiz, t_min);
+                const float c0min = spanBeginKepler(c0lox, c0hix, c0loy, c0hiy, c0loz, c0hiz, EPSILON);
                 const float c0max = spanEndKepler  (c0lox, c0hix, c0loy, c0hiy, c0loz, c0hiz, t_max);
                 const float c1lox = n1xy.x * idir.x - ood.x;
                 const float c1hix = n1xy.y * idir.x - ood.x;
                 const float c1loy = n1xy.z * idir.y - ood.y;
                 const float c1hiy = n1xy.w * idir.y - ood.y;
-                const float c1min = spanBeginKepler(c1lox, c1hix, c1loy, c1hiy, c1loz, c1hiz, t_min);
+                const float c1min = spanBeginKepler(c1lox, c1hix, c1loy, c1hiy, c1loz, c1hiz, EPSILON);
                 const float c1max = spanEndKepler  (c1lox, c1hix, c1loy, c1hiy, c1loz, c1hiz, t_max);
 
                 const bool traverseChild0 = (c0max >= c0min);
@@ -135,7 +145,7 @@ public:
                     float invDz = 1.0f / (d.x*v00.x + d.y*v00.y + d.z*v00.z);
                     float t = Oz * invDz;
 
-                    if (t > t_min && t < t_max) {
+                    if (t > EPSILON && t < t_max) {
                         // Compute and check barycentric u.
                         float Ox = v11.w + o.x*v11.x + o.y*v11.y + o.z*v11.z;
                         float Dx = d.x*v11.x + d.y*v11.y + d.z*v11.z;

@@ -18,7 +18,7 @@ __device__ __inline__ float fmax_fmax(float a, float b, float c) { return __int_
 
 __device__ __inline__ float spanBeginKepler(float a0, float a1, float b0, float b1, float c0, float c1, float d){ return fmax_fmax(fminf(a0, a1), fminf(b0, b1), fmin_fmax(c0, c1, d)); }
 __device__ __inline__ float spanEndKepler(float a0, float a1, float b0, float b1, float c0, float c1, float d)	{ return fmin_fmin(fmaxf(a0, a1), fmaxf(b0, b1), fmax_fmin(c0, c1, d)); }
-__device__ __inline__ void swap2(int& a, int& b){ int temp = a; a = b; b = temp;}
+__device__ __inline__ void swap(int& a, int& b){ int temp = a; a = b; b = temp;}
 
 __device__ bool intersect_bvh(BVH *bvh, const Ray &r, Intersection &intersect) {
     ///////////////////////////////////////////
@@ -123,7 +123,7 @@ __device__ bool intersect_bvh(BVH *bvh, const Ray &r, Intersection &intersect) {
                 stackPtr--; // popping decrements stackPtr by 4 bytes (because stackPtr is a pointer to char)
             }
 
-            // Otherwise, one or both children intersected => fetch child pointers.
+                // Otherwise, one or both children intersected => fetch child pointers.
             else {
                 // set nodeAddr equal to intersected childnode index (or first childnode when both children are intersected)
                 nodeAddr = (traverseChild0) ? cnodes.x : cnodes.y;
@@ -131,7 +131,7 @@ __device__ bool intersect_bvh(BVH *bvh, const Ray &r, Intersection &intersect) {
                 // Both children were intersected => push the farther one on the stack.
                 if (traverseChild0 && traverseChild1) // store closest child in nodeAddr, swap if necessary
                 {
-                    if (c1min < c0min) swap2(nodeAddr, cnodes.y);
+                    if (c1min < c0min) swap(nodeAddr, cnodes.y);
                     stackPtr++;
                     *stackPtr = cnodes.y; // push furthest node on the stack
                 }
@@ -171,7 +171,7 @@ __device__ bool intersect_bvh(BVH *bvh, const Ray &r, Intersection &intersect) {
             for (int triAddr = ~leafAddr;; triAddr += 3) { // no defined upper limit for loop, continues until leaf terminator code 0x80000000 is encountered
                 // Read first 16 bytes of the triangle.
                 // fetch first precomputed triangle edge
-                float4 v00 = tex1Dfetch<float4>(bvh->triangles_texture, triAddr);
+                float4 v00 = bvh->triangles[triAddr];
 
                 // End marker 0x80000000 (negative zero) => all triangles in leaf processed --> terminate
                 if (__float_as_int(v00.x) == 0x80000000)
@@ -185,7 +185,7 @@ __device__ bool intersect_bvh(BVH *bvh, const Ray &r, Intersection &intersect) {
                 if (t > tmin && t < hitT) {
                     // Compute and check barycentric u.
                     // fetch second precomputed triangle edge
-                    float4 v11 = tex1Dfetch<float4>(bvh->triangles_texture, triAddr + 1);
+                    float4 v11 = bvh->triangles[triAddr + 1];
                     float Ox = v11.w + origx*v11.x + origy*v11.y + origz*v11.z;  // Origin.x
                     float Dx = dirx * v11.x + diry * v11.y + dirz * v11.z;  // Direction.x
                     float u = Ox + t * Dx; /// parametric equation of a ray (intersection point)
@@ -193,7 +193,7 @@ __device__ bool intersect_bvh(BVH *bvh, const Ray &r, Intersection &intersect) {
                     if (u >= 0.0f && u <= 1.0f) {
                         // Compute and check barycentric v.
                         // fetch third precomputed triangle edge
-                        float4 v22 = tex1Dfetch<float4>(bvh->triangles_texture, triAddr + 2);
+                        float4 v22 = bvh->triangles[triAddr + 2];
                         float Oy = v22.w + origx*v22.x + origy*v22.y + origz*v22.z;
                         float Dy = dirx*v22.x + diry*v22.y + dirz*v22.z;
                         float v = Oy + t*Dy;
@@ -284,7 +284,7 @@ __device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMap *env
             bool importance_sample = false;
             Ray r_new = intersect.material->brdf(r, intersect, attenuation, rand_state, importance_sample);
 
-//            if (importance_sample) {
+            if (importance_sample) {
                 if (curand_uniform(&rand_state) < 0.5) {
                     r_new.direction = envmap->sample_lights(rand_state);
                 }
@@ -293,7 +293,7 @@ __device__ float3 path_trace(Ray r, curandState &rand_state, EnvironmentMap *env
                 float diff_pdf = intersect.material->pdf(r, intersect, r_new);
                 float mixed_pdf = (env_pdf + diff_pdf) * 0.5f;
                 color *= diff_pdf / mixed_pdf;
-//            }
+            }
 
             color *= attenuation;
             r = r_new;
@@ -337,192 +337,131 @@ __global__ void render_kernel(BVH *bvh, EnvironmentMap *envmap, Camera *camera, 
     image_data[i] = accum_color / samples_per_pixel;
 }
 
-__global__ void extend_paths1(BVH *bvh, PathQueue *paths, uint num_paths)
+__global__ void intersect_scene(BVH *bvh, PathQueue *paths, uint num_paths)
 {
+    const uint index = blockDim.x * blockIdx.x + threadIdx.x;
+    if (index >= num_paths) return;
+
+    // Load ray data
+    float4 o = paths->origin[index];
+    float4 d = paths->direction[index];
+    float3 n;
+    float t_min  = o.w;
+    float t_max  = d.w;
+
+    // Intersect planes
     const float3 normal = make_float3(0, 1, 0);
     const float3 position = make_float3(0, -0.283, 0);
 
-    // Traversal stack in CUDA thread-local memory.
-    int traversalStack[STACK_SIZE];
-    traversalStack[0] = ENTRYPOINT_SENTINEL; // Bottom-most entry.
-
-    // Live state during traversal, stored in registers.
-    float   origx, origy, origz;            // Ray origin.
-    char*   stackPtr;                       // Current position in traversal stack.
-    int     leafAddr;                       // First postponed leaf, non-negative if none.
-    int     leafAddr2;                      // Second postponed leaf, non-negative if none.
-    int     nodeAddr = ENTRYPOINT_SENTINEL; // Non-negative: current internal node, negative: second postponed leaf.
-    int     hitIndex;                       // Triangle index of the closest intersection, -1 if none.
-    float   hitT;                           // t-value of the closest intersection.
-    float3  hitNorm;                        // normal of the closest intersection.
-    float   tmin;
-    int     rayidx;
-    float   oodx;
-    float   oody;
-    float   oodz;
-    float   dirx;
-    float   diry;
-    float   dirz;
-    float   idirx;
-    float   idiry;
-    float   idirz;
-
-    // Fetch ray.
-    rayidx = blockDim.x * blockIdx.x + threadIdx.x;
-    if (rayidx >= num_paths) return;
-
-    float4 o = paths->origin[rayidx];
-    float4 d = paths->direction[rayidx];
-    origx = o.x;
-    origy = o.y;
-    origz = o.z;
-    tmin  = o.w;
-    dirx  = d.x;
-    diry  = d.y;
-    dirz  = d.z;
-    hitT  = d.w;
-    float ooeps = exp2f(-80.0f); // Avoid div by zero.
-    idirx = 1.0f / (fabsf(d.x) > ooeps ? d.x : copysignf(ooeps, d.x));
-    idiry = 1.0f / (fabsf(d.y) > ooeps ? d.y : copysignf(ooeps, d.y));
-    idirz = 1.0f / (fabsf(d.z) > ooeps ? d.z : copysignf(ooeps, d.z));
-    oodx  = origx * idirx;
-    oody  = origy * idiry;
-    oodz  = origz * idirz;
-
-    // Intersect planes
     float det = dot(make_float3(d), normal);
     if (det > EPSILON || det < -EPSILON) {
         auto t = dot(position - make_float3(o), normal) / det;
-        if (t > tmin && t < hitT) {
-            hitT = t;
-            hitNorm = normal;
+        if (t > t_min && t < t_max) {
+            t_max = t;
+            n = normal;
         }
     }
 
-    // Setup traversal.
-    stackPtr = (char*)&traversalStack[0];
-    leafAddr = 0;   // No postponed leaf.
-    leafAddr2= 0;   // No postponed leaf.
-    nodeAddr = 0;   // Start from the root.
-    hitIndex = -1;  // No triangle intersected so far.
+    // Traversal stack in CUDA thread-local memory.
+    int traversalStack[STACK_SIZE];
+
+    // Live state during traversal, stored in registers.
+    int stackPtr = 0;
+    int node_addr = 0;
+    float3 idir = 1.0f / make_float3(d);
+    float3 ood  = idir * make_float3(o);
 
     // Traversal loop.
-    while(nodeAddr != ENTRYPOINT_SENTINEL) {
-        // Traverse internal nodes until all SIMD lanes have found a leaf.
-//        while (nodeAddr >= 0 && nodeAddr != ENTRYPOINT_SENTINEL) {
-        while ((unsigned int) nodeAddr < (unsigned int) ENTRYPOINT_SENTINEL) {  // functionally equivalent, but faster
+    while(stackPtr >= 0) {
+        while (node_addr >= 0 && stackPtr >= 0) {
             // Fetch AABBs of the two child nodes.
-            const float4 n0xy = tex1Dfetch<float4>(bvh->nodes_texture, nodeAddr * 4 + 0); // (c0.lo.x, c0.hi.x, c0.lo.y, c0.hi.y)
-            const float4 n1xy = tex1Dfetch<float4>(bvh->nodes_texture, nodeAddr * 4 + 1); // (c1.lo.x, c1.hi.x, c1.lo.y, c1.hi.y)
-            const float4 nz   = tex1Dfetch<float4>(bvh->nodes_texture, nodeAddr * 4 + 2); // (c0.lo.z, c0.hi.z, c1.lo.z, c1.hi.z)
-            float4 tmp  = tex1Dfetch<float4>(bvh->nodes_texture, nodeAddr * 4 + 3); // child_index0, child_index1
-            int2  cnodes= *(int2*)&tmp;
+            const float4 n0xy = tex1Dfetch<float4>(bvh->nodes_texture, node_addr * 4 + 0); // (c0.lo.x, c0.hi.x, c0.lo.y, c0.hi.y)
+            const float4 n1xy = tex1Dfetch<float4>(bvh->nodes_texture, node_addr * 4 + 1); // (c1.lo.x, c1.hi.x, c1.lo.y, c1.hi.y)
+            const float4 nz   = tex1Dfetch<float4>(bvh->nodes_texture, node_addr * 4 + 2); // (c0.lo.z, c0.hi.z, c1.lo.z, c1.hi.z)
+            const float4 tmp  = tex1Dfetch<float4>(bvh->nodes_texture, node_addr * 4 + 3); // child_index0, child_index1
+            int2 cnodes       = *(int2*)&tmp;
 
             // Intersect the ray against the child nodes.
-            const float c0lox = n0xy.x * idirx - oodx;
-            const float c0hix = n0xy.y * idirx - oodx;
-            const float c0loy = n0xy.z * idiry - oody;
-            const float c0hiy = n0xy.w * idiry - oody;
-            const float c0loz = nz.x   * idirz - oodz;
-            const float c0hiz = nz.y   * idirz - oodz;
-            const float c1loz = nz.z   * idirz - oodz;
-            const float c1hiz = nz.w   * idirz - oodz;
-            const float c0min = spanBeginKepler(c0lox, c0hix, c0loy, c0hiy, c0loz, c0hiz, tmin);
-            const float c0max = spanEndKepler  (c0lox, c0hix, c0loy, c0hiy, c0loz, c0hiz, hitT);
-            const float c1lox = n1xy.x * idirx - oodx;
-            const float c1hix = n1xy.y * idirx - oodx;
-            const float c1loy = n1xy.z * idiry - oody;
-            const float c1hiy = n1xy.w * idiry - oody;
-            const float c1min = spanBeginKepler(c1lox, c1hix, c1loy, c1hiy, c1loz, c1hiz, tmin);
-            const float c1max = spanEndKepler  (c1lox, c1hix, c1loy, c1hiy, c1loz, c1hiz, hitT);
+            const float c0lox = n0xy.x * idir.x - ood.x;
+            const float c0hix = n0xy.y * idir.x - ood.x;
+            const float c0loy = n0xy.z * idir.y - ood.y;
+            const float c0hiy = n0xy.w * idir.y - ood.y;
+            const float c0loz = nz.x   * idir.z - ood.z;
+            const float c0hiz = nz.y   * idir.z - ood.z;
+            const float c1loz = nz.z   * idir.z - ood.z;
+            const float c1hiz = nz.w   * idir.z - ood.z;
+            const float c0min = spanBeginKepler(c0lox, c0hix, c0loy, c0hiy, c0loz, c0hiz, t_min);
+            const float c0max = spanEndKepler  (c0lox, c0hix, c0loy, c0hiy, c0loz, c0hiz, t_max);
+            const float c1lox = n1xy.x * idir.x - ood.x;
+            const float c1hix = n1xy.y * idir.x - ood.x;
+            const float c1loy = n1xy.z * idir.y - ood.y;
+            const float c1hiy = n1xy.w * idir.y - ood.y;
+            const float c1min = spanBeginKepler(c1lox, c1hix, c1loy, c1hiy, c1loz, c1hiz, t_min);
+            const float c1max = spanEndKepler  (c1lox, c1hix, c1loy, c1hiy, c1loz, c1hiz, t_max);
 
-            bool swp = (c1min < c0min);
+            const bool traverseChild0 = (c0max >= c0min);
+            const bool traverseChild1 = (c1max >= c1min);
 
-            bool traverseChild0 = (c0max >= c0min);
-            bool traverseChild1 = (c1max >= c1min);
-
-            // Neither child was intersected => pop stack.
-            if (!traverseChild0 && !traverseChild1) {
-                nodeAddr = *(int*)stackPtr;
-                stackPtr -= 4;
-            }
-
-                // Otherwise => fetch child pointers.
-            else {
-                nodeAddr = (traverseChild0) ? cnodes.x : cnodes.y;
+            // Otherwise => fetch child pointers.
+            if (traverseChild0 || traverseChild1) {
+                node_addr = (traverseChild0) ? cnodes.x : cnodes.y;
 
                 // Both children were intersected => push the farther one.
                 if (traverseChild0 && traverseChild1) {
-                    if (swp) {
-                        swap2(nodeAddr, cnodes.y);
+                    if (c1min < c0min) {
+                        swap(node_addr, cnodes.y);
                     }
-                    stackPtr += 4;
-                    *(int*)stackPtr = cnodes.y;
+
+                    traversalStack[++stackPtr] = cnodes.y;
                 }
+            } else {
+                node_addr = traversalStack[stackPtr--];
             }
-
-            // First leaf => postpone and continue traversal.
-            if (nodeAddr < 0 && leafAddr  >= 0) {    // Postpone max 1
-                leafAddr = nodeAddr;
-                nodeAddr = *(int*)stackPtr;
-                stackPtr -= 4;
-            }
-
-            // All SIMD lanes have found a leaf? => process them.
-            if(!__any(leafAddr >= 0))
-                break;
         }
 
-        // Process postponed leaf nodes.
-        while (leafAddr < 0) {
-            for (int triAddr = ~leafAddr;; triAddr += 3) {
-                // Tris in TEX (good to fetch as a single batch)
-                const float4 v00 = tex1Dfetch<float4>(bvh->triangles_texture, triAddr + 0);
-                const float4 v11 = tex1Dfetch<float4>(bvh->triangles_texture, triAddr + 1);
-                const float4 v22 = tex1Dfetch<float4>(bvh->triangles_texture, triAddr + 2);
+        while (node_addr < 0 && stackPtr >= 0) {
+            for (int tri_addr = ~node_addr;; tri_addr += 3) {
+                const float4 v00 = bvh->triangles[tri_addr + 0];
+                const float4 v11 = bvh->triangles[tri_addr + 1];
+                const float4 v22 = bvh->triangles[tri_addr + 2];
 
                 // End marker (negative zero) => all triangles processed.
                 if (__float_as_int(v00.x) == 0x80000000) {
                     break;
                 }
 
-                float Oz = v00.w - origx*v00.x - origy*v00.y - origz*v00.z;
-                float invDz = 1.0f / (dirx*v00.x + diry*v00.y + dirz*v00.z);
+                // Woop triangle intersection
+                float Oz = v00.w - o.x*v00.x - o.y*v00.y - o.z*v00.z;
+                float invDz = 1.0f / (d.x*v00.x + d.y*v00.y + d.z*v00.z);
                 float t = Oz * invDz;
 
-                if (t > tmin && t < hitT) {
+                if (t > t_min && t < t_max) {
                     // Compute and check barycentric u.
-                    float Ox = v11.w + origx*v11.x + origy*v11.y + origz*v11.z;
-                    float Dx = dirx*v11.x + diry*v11.y + dirz*v11.z;
+                    float Ox = v11.w + o.x*v11.x + o.y*v11.y + o.z*v11.z;
+                    float Dx = d.x*v11.x + d.y*v11.y + d.z*v11.z;
                     float u = Ox + t*Dx;
 
                     if (u >= 0.0f) {
                         // Compute and check barycentric v.
-                        float Oy = v22.w + origx*v22.x + origy*v22.y + origz*v22.z;
-                        float Dy = dirx*v22.x + diry*v22.y + dirz*v22.z;
+                        float Oy = v22.w + o.x*v22.x + o.y*v22.y + o.z*v22.z;
+                        float Dy = d.x*v22.x + d.y*v22.y + d.z*v22.z;
                         float v = Oy + t*Dy;
 
                         if (v >= 0.0f && u + v <= 1.0f) {
                             // Record intersection.
-                            hitT = t;
-                            hitIndex = triAddr;
-                            hitNorm = cross(make_float3(v11.x, v11.y, v11.z), make_float3(v22.x, v22.y, v22.z));
+                            t_max = t;
+                            n = cross(make_float3(v11.x, v11.y, v11.z), make_float3(v22.x, v22.y, v22.z));
                         }
                     }
                 }
             } // triangle
 
-            // Another leaf was postponed => process it as well.
-            leafAddr = nodeAddr;
-            if (nodeAddr < 0) {
-                nodeAddr = *(int*)stackPtr;
-                stackPtr -= 4;
-            }
+            node_addr = traversalStack[stackPtr--];
         } // leaf
     } // traversal
 
-    paths->direction[rayidx].w = hitT;
-    paths->normal[rayidx] = make_float4(hitNorm);
+    paths->direction[index].w = t_max;
+    paths->normal[index] = make_float4(n);
 }
 
 __device__ __inline__ float3 diffuse(const float3 &n, curandState &rand_state) {
@@ -540,41 +479,6 @@ __device__ __inline__ float3 diffuse(const float3 &n, curandState &rand_state) {
     return normalize(dir);
 }
 
-//__device__ int g_num_paths;
-//
-//__global__ void shade_paths(EnvironmentMap *envmap, float3 *image_data, PathQueue *paths, uint num_paths, uint width,
-//                            uint height, uint samples_per_pixel, int seed)
-//{
-//    uint index = blockDim.x * blockIdx.x + threadIdx.x;
-//    curandState rand_state;
-//    curand_init(seed + index, 0, 0, &rand_state);
-//
-//    while (index < num_paths) {
-//        if (paths->direction[index].w == FLT_MAX) {
-//            uint i = (height - paths->pixel_y[index] - 1) * width + paths->pixel_x[index];
-//            image_data[i] += make_float3(paths->throughput[index]) * envmap->sample(make_float3(paths->direction[index])) / samples_per_pixel;
-//        } else {
-//            float3 norm = normalize(make_float3(paths->normal[index]));
-//            float3 out_dir = (curand_uniform(&rand_state) < 0.5) ? diffuse(norm, rand_state) : envmap->sample_lights(rand_state);
-//            paths->origin[index] += paths->direction[index] * paths->direction[index].w;
-//            paths->origin[index].w = EPSILON;
-//            paths->direction[index] = make_float4(out_dir, FLT_MAX);
-//
-//            float env_pdf = envmap->pdf(out_dir);
-//            float diff_pdf = max(dot(norm, out_dir) / PI, 0.0f);
-//            float mixed_pdf = (env_pdf + diff_pdf) * 0.5f;
-//            paths->throughput[index] *= make_float4(0.65f * diff_pdf / mixed_pdf);
-//
-//            int next_ray_idx = atomicAdd(&g_num_paths, 1);
-//            new_paths[next_ray_idx] = path;
-//        }
-//
-//        index += blockDim.x * gridDim.x;
-//    }
-//}
-
-#include <cooperative_groups.h>
-
 __global__ void logic_kernel(PathQueue *paths, EnvironmentMap *envmap, float3 *image_data, uint samples_per_pixel,
                              Queue *new_paths, Queue *diffuse_paths)
 {
@@ -582,7 +486,7 @@ __global__ void logic_kernel(PathQueue *paths, EnvironmentMap *envmap, float3 *i
     if (index >= MAX_PATHS) return;
 
     // TERMINATE PATH
-    if (paths->direction[index].w == FLT_MAX) {
+    if (paths->direction[index].w == FLT_MAX || paths->depth[index]++ >= MAX_DEPTH) {
         uint i = paths->pixel_index[index];
         float3 color = make_float3(paths->throughput[index]) * envmap->sample(make_float3(paths->direction[index])) / samples_per_pixel;
         atomicAdd(&image_data[i].x, color.x);
@@ -596,34 +500,31 @@ __global__ void logic_kernel(PathQueue *paths, EnvironmentMap *envmap, float3 *i
     }
 }
 
-__global__ void generate_primary_paths(Camera *camera, size_t width, size_t height, uint samples_per_pixel, PathQueue *paths, Queue *new_paths, uint num_paths, uint total_paths, int seed)
+__global__ void generate_primary_paths(Camera *camera, uint width, uint height, uint samples_per_pixel, uint path_count,
+                                       PathQueue *paths, Queue *new_paths, int seed)
 {
-    uint index = blockDim.x * blockIdx.x + threadIdx.x;
-
+    const uint index = blockDim.x * blockIdx.x + threadIdx.x;
     if (index >= new_paths->size) return;
 
-    const uint global_index = num_paths + index;
-
-    if (global_index >= total_paths) {
-        return;
-    }
+    const uint global_index = (path_count + index) / samples_per_pixel;
+    if (global_index >= width * height) return;
 
     curandState rand_state;
     curand_init(seed + index, 0, 0, &rand_state);
 
     const uint i = new_paths->index[index];
-    const uint x = (global_index / samples_per_pixel) % width;
-    const uint y = (global_index / samples_per_pixel / width) % height;
+    const uint x = (global_index) % width;
+    const uint y = (global_index / width) % height;
 
-    float u = (float(x) + curand_uniform(&rand_state) - .5f) / float(width - 1);
-    float v = (float(y) + curand_uniform(&rand_state) - .5f) / float(height - 1);
+    const float u = (float(x) + curand_uniform(&rand_state) - .5f) / float(width - 1);
+    const float v = (float(y) + curand_uniform(&rand_state) - .5f) / float(height - 1);
 
     Ray r = camera->cast_ray(u, v, rand_state);
     paths->pixel_index[i] = (height - y - 1) * width + x;
     paths->origin[i] = make_float4(r.origin, EPSILON);
-    paths->normal[i] = make_float4(0);
     paths->direction[i] = make_float4(r.direction, FLT_MAX);
     paths->throughput[i] = make_float4(1);
+    paths->depth[i] = 0;
 }
 
 __global__ void generate_diffuse_paths(EnvironmentMap *envmap, PathQueue *paths, Queue *diffuse_paths, int seed)
@@ -655,28 +556,27 @@ __host__ void launch_render_kernel(BVH *bvh, EnvironmentMap *envmap, Camera *cam
 //    render_kernel <<< grid, block >>>(bvh, envmap, camera, image_data, width, height, samples_per_pixel);
 //    return;
 
-    const uint block_size = 64;
+    const uint block_size = 64 * 2;
     const uint grid_size = (MAX_PATHS + block_size - 1) / block_size;
     const uint total_paths = width * height * samples_per_pixel;
 
-    uint num_paths = 0;
-    uint zero = 0;
+    uint path_count = 0;
+    int i = 1021;
+
     do {
-        generate_primary_paths<<<grid_size, block_size>>>(camera, width, height, samples_per_pixel, paths, new_paths, num_paths, total_paths, rand());
+        uint num_new_paths = new_paths->get_size();
+        if (num_new_paths > 0) {
+            generate_primary_paths<<<grid_size, block_size>>>(camera, width, height, samples_per_pixel,
+                                                              path_count, paths, new_paths, i++);
+            new_paths->clear();
+            path_count += num_new_paths;
+        }
 
-        // TODO increment g_num_paths
-        uint num_new_paths;
-        cudaMemcpy(&num_new_paths, &new_paths->size, sizeof(uint), cudaMemcpyDeviceToHost);
-        num_paths += num_new_paths;
-        cudaMemcpy(&new_paths->size, &zero, sizeof(uint), cudaMemcpyHostToDevice);
+        generate_diffuse_paths<<<grid_size, block_size>>>(envmap, paths, diffuse_paths, i++);
+        diffuse_paths->clear();
 
-
-        generate_diffuse_paths<<<grid_size, block_size>>>(envmap, paths, diffuse_paths, rand());
-        cudaMemcpy(&diffuse_paths->size, &zero, sizeof(uint), cudaMemcpyHostToDevice);
-
-        extend_paths1<<<grid_size, block_size>>>(bvh, paths, MAX_PATHS);
+        intersect_scene<<<grid_size, block_size>>>(bvh, paths, MAX_PATHS);
 
         logic_kernel<<<grid_size, block_size>>>(paths, envmap, image_data, samples_per_pixel, new_paths, diffuse_paths);
-
-    } while (num_paths < total_paths);
+    } while (path_count < total_paths);
 }

@@ -43,7 +43,6 @@ BVH::~BVH()
     cudaFree(triangles);
     cudaFree(nodes);
 
-    cudaDestroyTextureObject(triangles_texture);
     cudaDestroyTextureObject(nodes_texture);
 }
 
@@ -260,10 +259,6 @@ void BVH::send_to_device(const std::vector<Triangle> &h_triangles, const std::ve
     // Specify texture object parameters
     cudaTextureDesc texture_desc{};
     memset(&texture_desc, 0, sizeof(texture_desc));
-
-    // Create triangles texture object
-    triangles_texture = 0;
-    gpuErrchk(cudaCreateTextureObject(&triangles_texture, &resource_desc, &texture_desc, nullptr));
 
     // Create nodes texture object
     resource_desc.res.linear.devPtr = nodes;

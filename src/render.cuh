@@ -36,6 +36,16 @@ struct Queue
         int i = g.shfl(warp_res, 0) + g.thread_rank();
         index[i] = idx;
     }
+
+    __host__ void clear() {
+        cudaMemset(&size, 0, sizeof(uint));
+    }
+
+    __host__ uint get_size() {
+        uint h_size;
+        cudaMemcpy(&h_size, &size, sizeof(uint), cudaMemcpyDeviceToHost);
+        return h_size;
+    }
 };
 
 __host__ void launch_render_kernel(BVH *bvh, EnvironmentMap *envmap, Camera *camera, float3 *image_data, size_t width,

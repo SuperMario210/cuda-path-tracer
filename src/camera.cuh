@@ -36,7 +36,7 @@ public:
         lens_radius = aperture / 2;
     }
 
-    __device__ inline Ray cast_ray(float s, float t, curandState &rand_state) const
+    __device__ __inline__ Ray cast_ray(float s, float t, curandState &rand_state) const
     {
         if (lens_radius < EPSILON) {
             return {origin, normalize(bottom_left + right * s + up * t)};

@@ -36,7 +36,6 @@ public:
     float4 *triangles;
     float4 *nodes;
 
-    cudaTextureObject_t triangles_texture;
     cudaTextureObject_t nodes_texture;
 
     void build(size_t start, size_t end, size_t &index, std::vector<Triangle> &h_triangles, std::vector<BVHNode> &h_nodes);

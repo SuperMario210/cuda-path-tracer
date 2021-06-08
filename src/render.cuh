@@ -47,6 +47,6 @@ struct PathData
     }
 };
 
-__host__ void launch_render_kernel(Scene *scene, size_t width, size_t height, size_t samples_per_pixel);
+__host__ void render_scene(Scene *scene, size_t width, size_t height, size_t samples_per_pixel);
 
 #endif //CUDA_PATH_TRACER_KERNEL_CUH

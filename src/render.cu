@@ -244,7 +244,7 @@ __global__ void generate_glass_paths(PathData *paths, int seed)
     paths->set_flag(index, IS_ACTIVE);
 }
 
-__host__ void launch_render_kernel(Scene *scene, size_t width, size_t height, size_t samples_per_pixel)
+__host__ void render_scene(Scene *scene, size_t width, size_t height, size_t samples_per_pixel)
 {
     PathData *paths;
     gpuErrchk(cudaMalloc(&paths, sizeof(PathData)));
@@ -275,4 +275,6 @@ __host__ void launch_render_kernel(Scene *scene, size_t width, size_t height, si
         gpuErrchk(cudaMemcpyFromSymbol(&is_working, g_is_working, sizeof(bool)));
         gpuErrchk(cudaMemcpyToSymbol(g_is_working, &temp, sizeof(bool)));
     } while (is_working);
+
+    gpuErrchk(cudaFree(paths));
 }

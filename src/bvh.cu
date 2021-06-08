@@ -226,6 +226,11 @@ void woopify_triangle(const Triangle &triangle, std::vector<float4> &gpu_triangl
     gpu_triangle_data.push_back(mtx.getRow(1));
 }
 
+/**
+ * Converts the BVH into the compressed format used on the GPU, then sends the BVH data to the GPU.
+ * @param h_triangles the list of triangles stored in this BVH
+ * @param h_nodes the list of BVHNodes representing this BVH
+ */
 void BVH::send_to_device(const std::vector<Triangle> &h_triangles, const std::vector<BVHNode> &h_nodes)
 {
     std::vector<GPUBVHNode> gpu_nodes;
@@ -288,25 +293,19 @@ void BVH::send_to_device(const std::vector<Triangle> &h_triangles, const std::ve
         gpu_nodes.push_back(gpu_node);
     }
 
+    // Copy woopified triangle data to the GPU
     gpuErrchk(cudaMalloc(&triangles, gpu_triangle_data.size() * sizeof(float4)));
     gpuErrchk(cudaMemcpy(triangles, gpu_triangle_data.data(), gpu_triangle_data.size() * sizeof(float4), cudaMemcpyHostToDevice));
 
+    // Copy compressed node data to the GPU
     gpuErrchk(cudaMalloc(&nodes, gpu_nodes.size() * sizeof(GPUBVHNode)));
     gpuErrchk(cudaMemcpy(nodes, gpu_nodes.data(), gpu_nodes.size() * sizeof(GPUBVHNode), cudaMemcpyHostToDevice));
 
-    // Specify texture
+    // Store node data as a texture for cached lookups
+    cudaTextureDesc texture_desc{};
     cudaResourceDesc resource_desc{};
     memset(&resource_desc, 0, sizeof(resource_desc));
     resource_desc.resType = cudaResourceTypeLinear;
-    resource_desc.res.linear.devPtr = triangles;
-    resource_desc.res.linear.sizeInBytes = gpu_triangle_data.size() * sizeof(float4);
-    resource_desc.res.linear.desc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
-
-    // Specify texture object parameters
-    cudaTextureDesc texture_desc{};
-    memset(&texture_desc, 0, sizeof(texture_desc));
-
-    // Create nodes texture object
     resource_desc.res.linear.devPtr = nodes;
     resource_desc.res.linear.sizeInBytes = gpu_nodes.size() * sizeof(GPUBVHNode);
     resource_desc.res.linear.desc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);

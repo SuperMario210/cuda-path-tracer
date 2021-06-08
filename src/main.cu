@@ -6,6 +6,7 @@
 #include "camera.cuh"
 #include "image.h"
 #include "render.cuh"
+#include "scene.h"
 
 #define EXPOSURE            2.0f    // Used for tone mapping
 #define GAMMA               2.2f    // Used for gamma correction
@@ -58,73 +59,28 @@ int main(int argc, char **argv)
     const size_t height = 1080;
     const size_t samples_per_pixel = 512;
 
-    // Setup BVH
-    std::vector<Triangle> triangles;
-    load_obj("../obj/bunny.obj", triangles);
-//    load_obj("../obj/bunny_lowpoly.obj", triangles);
-    BVH bvh_h(triangles);
-    BVH *bvh_d;
-    gpuErrchk(cudaMalloc(&bvh_d, sizeof(BVH)));
-    gpuErrchk(cudaMemcpy(bvh_d, &bvh_h, sizeof(BVH), cudaMemcpyHostToDevice));
-
-    // Setup environment map
-    const EnvironmentMap envmap_h("../background/studio.hdr");
-    EnvironmentMap *envmap_d;
-    gpuErrchk(cudaMalloc(&envmap_d, sizeof(EnvironmentMap)));
-    gpuErrchk(cudaMemcpy(envmap_d, &envmap_h, sizeof(EnvironmentMap), cudaMemcpyHostToDevice));
-
-    // Setup camera
-//    float3 origin = make_float3(-1.1, 0.2, -0.8);
-//    float3 look_at = make_float3(0, 0, 0);
-//    float fov = 38;
-//    float aspect_ratio = float(width) / float(height);
-//    float aperture = 0.01;
-//    float focus_dist = 1.15; // length(look_at - origin);
-
-    float3 origin = make_float3(0, 1, 5);
-    float3 look_at = make_float3(0, 0.5, 0);
-    float fov = 35;
-    float aspect_ratio = float(width) / float(height);
-    float aperture = 0.1;
-    float focus_dist = 4.75;
-
-    Camera camera_h(origin, look_at, fov, aspect_ratio, aperture, focus_dist);
-    Camera *camera_d;
-    gpuErrchk(cudaMalloc(&camera_d, sizeof(Camera)));
-    gpuErrchk(cudaMemcpy(camera_d, &camera_h, sizeof(Camera), cudaMemcpyHostToDevice));
-
-    // Setup image
-    Image image_h(width, height);
-    float3 *image_d;
-    gpuErrchk(cudaMalloc(&image_d, width * height * sizeof(float3)));
-    PathData *paths;
-    gpuErrchk(cudaMalloc(&paths, sizeof(PathData)));
-
-    dim3 block(8, 8, 1);
-    dim3 grid(width / block.x, height / block.y, 1);
+    // Load Scene File
+    Scene h_scene("../scene/balls.scene", width, height);
 
     // Run render kernel
     std::cout << "Rendering image...\n";
     auto t1 = std::chrono::high_resolution_clock::now();
-    launch_render_kernel(bvh_d, envmap_d, camera_d, image_d, width, height, samples_per_pixel, grid, block, paths);
+    launch_render_kernel(&h_scene, width, height, samples_per_pixel);
     gpuErrchk(cudaDeviceSynchronize());
     auto t2 = std::chrono::high_resolution_clock::now();
     auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
     std::cout << "\rRendered image in " << ms_int.count() << " ms\n";
 
     // Copy image data back to device
-    gpuErrchk(cudaMemcpy(image_h.data, image_d, width * height * sizeof(float3), cudaMemcpyDeviceToHost));
-    gpuErrchk(cudaFree(bvh_d));
-    gpuErrchk(cudaFree(envmap_d));
-    gpuErrchk(cudaFree(camera_d));
-    gpuErrchk(cudaFree(image_d));
+    Image h_image(width, height);
+    gpuErrchk(cudaMemcpy(h_image.data, h_scene.image_data, width * height * sizeof(float3), cudaMemcpyDeviceToHost));
     gpuErrchk(cudaDeviceSynchronize());
 
     // Save image
     std::cout << "Saving image...\n";
     t1 = std::chrono::high_resolution_clock::now();
-    image_h.tone_map(EXPOSURE, GAMMA);
-    image_h.save_png("../img/test");
+    h_image.tone_map(EXPOSURE, GAMMA);
+    h_image.save_png("../img/test");
     t2 = std::chrono::high_resolution_clock::now();
     ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
     std::cout << "\rSaved image in " << ms_int.count() << " ms\n";

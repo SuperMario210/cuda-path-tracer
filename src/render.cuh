@@ -9,6 +9,7 @@
 #include "common.h"
 #include "environment_map.cuh"
 #include "bvh.cuh"
+#include "scene.h"
 
 #define MAX_PATHS   0x200000
 #define IS_ACTIVE   0x1
@@ -46,7 +47,6 @@ struct PathData
     }
 };
 
-__host__ void launch_render_kernel(BVH *bvh, EnvironmentMap *envmap, Camera *camera, float3 *image_data, size_t width,
-                                   size_t height, size_t samples_per_pixel, dim3 grid, dim3 block, PathData *paths);
+__host__ void launch_render_kernel(Scene *scene, size_t width, size_t height, size_t samples_per_pixel);
 
 #endif //CUDA_PATH_TRACER_KERNEL_CUH

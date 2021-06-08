@@ -7,7 +7,8 @@
 #define MIN_DEPTH               3
 #define MAX_DEPTH               16
 
-__global__ void intersect_scene(BVH *bvh, PathData *paths)
+__global__
+void intersect_scene(PathData *paths, BVH *bvh, Plane *planes, uint num_planes, Sphere *spheres, uint num_spheres)
 {
     const uint index = blockDim.x * blockIdx.x + threadIdx.x;
     if (index >= MAX_PATHS || !paths->get_flag(index, IS_ACTIVE)) return;
@@ -21,24 +22,27 @@ __global__ void intersect_scene(BVH *bvh, PathData *paths)
     uint mat_type;
 
     // Intersect planes
-//    const float3 position = make_float3(0, -0.283, 0);
-    const float3 position = make_float3(0, 0, 0);
-    const float3 normal = make_float3(0, 1, 0);
-    const Plane plane(position, normal, make_float4(0.325, 0.3, 0.35, 0), IS_DIFFUSE);
-    plane.intersect(o, d, t_max, n, mat, mat_type);
+    for (uint i = 0; i < num_planes; i++) {
+        planes[i].intersect(o, d, t_max, n, mat, mat_type);
+    }
 
     // Intersect spheres
-    const Sphere sphere1(make_float3(2.025, 0.5, 0), 0.5, make_float4(0.15, 0.25, 0.4, 0.05), IS_GLOSSY);
-    const Sphere sphere2(make_float3(0.675, 0.5, 0), 0.5, make_float4(0.5, 0.5, 0.5, 0), IS_MIRROR);
-    const Sphere sphere3(make_float3(-0.675, 0.5, 0), 0.5, make_float4(0.7, 0.7, 0.7, 0), IS_DIFFUSE);
-    const Sphere sphere4(make_float3(-2.025, 0.5, 0), 0.5, make_float4(1, 1, 1, 1.5), IS_GLASS);
-    sphere1.intersect(o, d, t_max, n, mat, mat_type);
-    sphere2.intersect(o, d, t_max, n, mat, mat_type);
-    sphere3.intersect(o, d, t_max, n, mat, mat_type);
-    sphere4.intersect(o, d, t_max, n, mat, mat_type);
+    for (uint i = 0; i < num_spheres; i++) {
+        spheres[i].intersect(o, d, t_max, n, mat, mat_type);
+    }
+//    const Sphere sphere1(make_float3(2.025, 0.5, 0), 0.5, make_float4(0.15, 0.25, 0.4, 0.05), IS_GLOSSY);
+//    const Sphere sphere2(make_float3(0.675, 0.5, 0), 0.5, make_float4(0.5, 0.5, 0.5, 0), IS_MIRROR);
+//    const Sphere sphere3(make_float3(-0.675, 0.5, 0), 0.5, make_float4(0.7, 0.7, 0.7, 0), IS_DIFFUSE);
+//    const Sphere sphere4(make_float3(-2.025, 0.5, 0), 0.5, make_float4(1, 1, 1, 1.5), IS_GLASS);
+//    sphere1.intersect(o, d, t_max, n, mat, mat_type);
+//    sphere2.intersect(o, d, t_max, n, mat, mat_type);
+//    sphere3.intersect(o, d, t_max, n, mat, mat_type);
+//    sphere4.intersect(o, d, t_max, n, mat, mat_type);
 
     // Intersect triangles
-//    bvh->intersect(o, d, t_max, n, mat, mat_type);
+//    if (bvh != nullptr) {
+//        bvh->intersect(o, d, t_max, n, mat, mat_type);
+//    }
 
     paths->direction[index].w = t_max;
     paths->normal[index] = make_float4(normalize(n));
@@ -248,28 +252,33 @@ __global__ void generate_glass_paths(PathData *paths, int seed)
     paths->set_flag(index, IS_ACTIVE);
 }
 
-__host__ void launch_render_kernel(BVH *bvh, EnvironmentMap *envmap, Camera *camera, float3 *image_data, size_t width,
-                                   size_t height, size_t samples_per_pixel, dim3 grid, dim3 block, PathData *paths)
+__host__ void launch_render_kernel(Scene *scene, size_t width, size_t height, size_t samples_per_pixel)
 {
+    PathData *paths;
+    gpuErrchk(cudaMalloc(&paths, sizeof(PathData)));
+
     const uint block_size = 128;
     const uint grid_size = (MAX_PATHS + block_size - 1) / block_size;
 
     bool is_working = false;
     bool override = true;
     do {
-        generate_primary_paths<<<grid_size, block_size>>>(camera, width, height, samples_per_pixel,
+        generate_primary_paths<<<grid_size, block_size>>>(scene->camera, width, height, samples_per_pixel,
                                                           paths, rand(), override);
 
-        generate_diffuse_paths<<<grid_size, block_size>>>(envmap, paths, rand());
+        generate_diffuse_paths<<<grid_size, block_size>>>(scene->environment, paths, rand());
+
         generate_mirror_paths<<<grid_size, block_size>>>(paths);
-        generate_glossy_paths<<<grid_size, block_size>>>(envmap, paths, rand());
+
+        generate_glossy_paths<<<grid_size, block_size>>>(scene->environment, paths, rand());
+
         generate_glass_paths<<<grid_size, block_size>>>(paths, rand());
 
-        intersect_scene<<<grid_size, block_size>>>(bvh, paths);
+        intersect_scene<<<grid_size, block_size>>>(paths, scene->bvh, scene->planes, scene->num_planes, scene->spheres, scene->num_spheres);
 
-        logic_kernel<<<grid_size, block_size>>>(paths, envmap, image_data, samples_per_pixel, rand());
+        logic_kernel<<<grid_size, block_size>>>(paths, scene->environment, scene->image_data, samples_per_pixel, rand());
+
         override = false;
-
         bool temp = false;
         gpuErrchk(cudaMemcpyFromSymbol(&is_working, g_is_working, sizeof(bool)));
         gpuErrchk(cudaMemcpyToSymbol(g_is_working, &temp, sizeof(bool)));

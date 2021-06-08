@@ -156,7 +156,7 @@ void BVH::build(size_t start, size_t end, size_t &index, std::vector<Triangle> &
 
         // Split triangles into two equal groups
         size_t mid = start + num_objects / 2;
-        std::nth_element(triangles.begin() + start, triangles.begin() + mid, triangles.begin() + end, compare);
+        std::nth_element(h_triangles.begin() + start, h_triangles.begin() + mid, h_triangles.begin() + end, compare);
 
 #endif
 

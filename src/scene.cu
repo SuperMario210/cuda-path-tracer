@@ -9,7 +9,7 @@
 #include <chrono>
 
 #include "bvh.cuh"
-#include "scene.h"
+#include "scene.cuh"
 #include "render.cuh"
 
 static void load_obj(const std::string &filename, std::vector<Triangle> &triangles)
@@ -226,8 +226,8 @@ Scene::~Scene()
     gpuErrchk(cudaFree(environment));
     gpuErrchk(cudaFree(image_data));
     if (planes != nullptr) gpuErrchk(cudaFree(planes));
-    if (planes != nullptr) gpuErrchk(cudaFree(spheres));
-    if (planes != nullptr) gpuErrchk(cudaFree(bvh));
+    if (spheres != nullptr) gpuErrchk(cudaFree(spheres));
+    if (bvh != nullptr) gpuErrchk(cudaFree(bvh));
 
     delete h_environment;
     if (h_bvh != nullptr) delete h_bvh;

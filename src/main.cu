@@ -6,7 +6,7 @@
 #include "camera.cuh"
 #include "image.h"
 #include "render.cuh"
-#include "scene.h"
+#include "scene.cuh"
 
 #define EXPOSURE            2.0f    // Used for tone mapping
 #define GAMMA               2.2f    // Used for gamma correction

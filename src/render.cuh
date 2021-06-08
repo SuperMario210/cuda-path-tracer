@@ -9,7 +9,7 @@
 #include "common.h"
 #include "environment_map.cuh"
 #include "bvh.cuh"
-#include "scene.h"
+#include "scene.cuh"
 
 #define MAX_PATHS   0x200000
 #define IS_ACTIVE   0x1

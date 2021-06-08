@@ -2,8 +2,8 @@
 // Created by SuperMario210 on 6/7/2021.
 //
 
-#ifndef PATHTRACER_SCENE_H
-#define PATHTRACER_SCENE_H
+#ifndef PATHTRACER_SCENE_CUH
+#define PATHTRACER_SCENE_CUH
 
 
 #include "image.h"
@@ -32,4 +32,4 @@ public:
 };
 
 
-#endif //PATHTRACER_SCENE_H
+#endif //PATHTRACER_SCENE_CUH

@@ -5,37 +5,54 @@
 #include <cassert>
 #include <algorithm>
 #include <set>
+#include <chrono>
 #include "bvh.cuh"
 #include "../include/linear_math.cuh"
 
 #define SAH_CONSTRUCTION
 #define NUM_BUCKETS 12
 
+/**
+ * Used for storing information about each bucket during SAH construction
+ */
 struct BucketInfo {
-    AABB aabb;
-    size_t count = 0;
+    AABB aabb;              // The bounding box for this bucket
+    size_t count = 0;       // The number of triangles in this bucket
 };
 
-struct stack_entry {
-    size_t index;
-    size_t parent_index;
-    bool is_left;
+/**
+ * Used for flattening the BVH before sending it to the GPU
+ */
+struct StackEntry {
+    size_t index;           // The index of this entry in the nodes vector
+    size_t parent_index;    // The index of this entry's parent node
+    bool is_left;           // Is this entry a left or right child node
 };
 
+/**
+ * A compressed version of the BVHNode for use on the GPU.  Stores the left and right bounding boxes and the indices of
+ * the left and right child nodes in 64 bytes
+ */
 struct GPUBVHNode {
     float4 left_xy;         // (left.min.x, left.max.x, left.min.y, left.max.y)
     float4 right_xy;        // (right.min.x, right.max.x, right.min.y, right.max.y)
     float4 left_right_z;    // (left.min.z, left.max.z, right.min.z, right.max.z)
-    int4 child_indices;     // (left.index, right.index, left.num_triangles, right.num_triangles)
+    int4 child_indices;     // (left.index, right.index, 0, 0)
 };
 
-BVH::BVH(std::vector<Triangle> h_triangles)
+BVH::BVH(std::vector<Triangle> h_triangles, const float4 &mat, const uint mat_type) : material(mat), material_type(mat_type)
 {
-    std::vector<BVHNode> h_nodes(2 * h_triangles.size());
+    std::cout << "Constructing BVH...\n";
+    auto t1 = std::chrono::high_resolution_clock::now();
 
+    std::vector<BVHNode> h_nodes(2 * h_triangles.size());
     size_t index = 0;
     build(0, h_triangles.size(), index, h_triangles, h_nodes);
     send_to_device(h_triangles, h_nodes);
+
+    auto t2 = std::chrono::high_resolution_clock::now();
+    auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
+    std::cout << "Constructed BVH in " << ms_int.count() << " ms\n";
 }
 
 BVH::~BVH()
@@ -43,10 +60,16 @@ BVH::~BVH()
     cudaFree(triangles);
     cudaFree(nodes);
 
-    cudaDestroyTextureObject(triangles_texture);
     cudaDestroyTextureObject(nodes_texture);
 }
 
+/**
+ * Compares the centroids of two triangle's bounding boxes along the given axis
+ * @param a the first triangle
+ * @param b the second triangle
+ * @param axis the axis along which to compare (0 = x, 1 = y, 2 = z)
+ * @return true if a's centroid < b's centroid on the given axis, false otherwise
+ */
 static bool aabb_compare(const Triangle &a, const Triangle &b, size_t axis)
 {
     float3 centroid_a = a.bounding_box().centroid();
@@ -54,11 +77,26 @@ static bool aabb_compare(const Triangle &a, const Triangle &b, size_t axis)
     return (&centroid_a.x)[axis] < (&centroid_b.x)[axis];
 }
 
+/**
+ * Calculates what bucket a given bounding box should be placed into
+ * @param box the bounding box to sort
+ * @param bound the bounding box surrounding all objects being considered
+ * @param axis the axis we are splitting along (0 = x, 1 = y, 2 = z)
+ * @return the index of the bucket in which box should be placed
+ */
 static inline size_t bucket_idx(const AABB &box, const AABB &bound, int axis) {
     float3 centroid = box.centroid();
     return NUM_BUCKETS * ((&centroid.x)[axis] - (&bound.min.x)[axis]) / ((&bound.max.x)[axis] - (&bound.min.x)[axis]);
 }
 
+/**
+ * Recursively builds a BVH from the given vector of triangles
+ * @param start index in the triangles vector at which to start
+ * @param end index in the triangles vector at which to end
+ * @param index the current index in the BVHNodes vector
+ * @param h_triangles a vector of triangles to convert into a BVH
+ * @param h_nodes a vector of BVHNodes representing the completed BVH
+ */
 void BVH::build(size_t start, size_t end, size_t &index, std::vector<Triangle> &h_triangles, std::vector<BVHNode> &h_nodes)
 {
     BVHNode *node = &h_nodes[index++];
@@ -150,7 +188,7 @@ void BVH::build(size_t start, size_t end, size_t &index, std::vector<Triangle> &
 
         // Split triangles into two equal groups
         size_t mid = start + num_objects / 2;
-        std::nth_element(triangles.begin() + start, triangles.begin() + mid, triangles.begin() + end, compare);
+        std::nth_element(h_triangles.begin() + start, h_triangles.begin() + mid, h_triangles.begin() + end, compare);
 
 #endif
 
@@ -168,11 +206,16 @@ void BVH::build(size_t start, size_t end, size_t &index, std::vector<Triangle> &
 
 }
 
+/**
+ * Converts triangles into normalized form used in Woop's triangle intersection algorithm
+ * @param triangle The triangle to "Woopify"
+ * @param gpu_triangle_data The vector of triangle data to add the woopified triangle to
+ */
 void woopify_triangle(const Triangle &triangle, std::vector<float4> &gpu_triangle_data)
 {
-    Mat4f mtx;
     // compute edges and transform them with a matrix
-    mtx.setCol(0, make_float4(triangle.v0 - triangle.v2, 0.0f)); // sets matrix column 0 equal to a Vec4f(Vec3f, 0.0f )
+    Mat4f mtx;
+    mtx.setCol(0, make_float4(triangle.v0 - triangle.v2, 0.0f));
     mtx.setCol(1, make_float4(triangle.v1 - triangle.v2, 0.0f));
     mtx.setCol(2, make_float4(cross(triangle.v0 - triangle.v2, triangle.v1 - triangle.v2), 0.0f));
     mtx.setCol(3, make_float4(triangle.v2, 1.0f));
@@ -183,16 +226,23 @@ void woopify_triangle(const Triangle &triangle, std::vector<float4> &gpu_triangl
     gpu_triangle_data.push_back(mtx.getRow(1));
 }
 
+/**
+ * Converts the BVH into the compressed format used on the GPU, then sends the BVH data to the GPU.
+ * @param h_triangles the list of triangles stored in this BVH
+ * @param h_nodes the list of BVHNodes representing this BVH
+ */
 void BVH::send_to_device(const std::vector<Triangle> &h_triangles, const std::vector<BVHNode> &h_nodes)
 {
     std::vector<GPUBVHNode> gpu_nodes;
+    gpu_nodes.reserve(h_nodes.size() / 2);
     std::vector<float4> gpu_triangle_data;
+    gpu_triangle_data.reserve(h_triangles.size() * 4);
     gpu_triangle_data.push_back(make_float4(0));
-    std::vector<stack_entry> stack;
+    std::vector<StackEntry> stack;
     stack.push_back({0, 0, false});
 
     while (!stack.empty()) {
-        stack_entry entry = stack[stack.size() - 1];
+        StackEntry entry = stack[stack.size() - 1];
         stack.pop_back();
 
         const BVHNode *node = &h_nodes[entry.index];
@@ -243,33 +293,22 @@ void BVH::send_to_device(const std::vector<Triangle> &h_triangles, const std::ve
         gpu_nodes.push_back(gpu_node);
     }
 
+    // Copy woopified triangle data to the GPU
     gpuErrchk(cudaMalloc(&triangles, gpu_triangle_data.size() * sizeof(float4)));
     gpuErrchk(cudaMemcpy(triangles, gpu_triangle_data.data(), gpu_triangle_data.size() * sizeof(float4), cudaMemcpyHostToDevice));
 
+    // Copy compressed node data to the GPU
     gpuErrchk(cudaMalloc(&nodes, gpu_nodes.size() * sizeof(GPUBVHNode)));
     gpuErrchk(cudaMemcpy(nodes, gpu_nodes.data(), gpu_nodes.size() * sizeof(GPUBVHNode), cudaMemcpyHostToDevice));
 
-    // Specify texture
+    // Store node data as a texture for cached lookups
+    cudaTextureDesc texture_desc{};
     cudaResourceDesc resource_desc{};
     memset(&resource_desc, 0, sizeof(resource_desc));
     resource_desc.resType = cudaResourceTypeLinear;
-    resource_desc.res.linear.devPtr = triangles;
-    resource_desc.res.linear.sizeInBytes = gpu_triangle_data.size() * sizeof(float4);
-    resource_desc.res.linear.desc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
-
-    // Specify texture object parameters
-    cudaTextureDesc texture_desc{};
-    memset(&texture_desc, 0, sizeof(texture_desc));
-
-    // Create triangles texture object
-    triangles_texture = 0;
-    gpuErrchk(cudaCreateTextureObject(&triangles_texture, &resource_desc, &texture_desc, nullptr));
-
-    // Create nodes texture object
     resource_desc.res.linear.devPtr = nodes;
     resource_desc.res.linear.sizeInBytes = gpu_nodes.size() * sizeof(GPUBVHNode);
     resource_desc.res.linear.desc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
     nodes_texture = 0;
     gpuErrchk(cudaCreateTextureObject(&nodes_texture, &resource_desc, &texture_desc, nullptr));
-
 }

@@ -1,0 +1,20 @@
+CAMERA
+position -10 12 10
+look_at 0 2 0
+fov 38
+aperture 0.05
+focus_dist 15
+
+ENVIRONMENT
+file_name ../background/studio.hdr
+
+PLANE
+material_type LAMBERTIAN
+albedo 0.1 0.08 0.15
+position 0 0 0
+normal 0 1 0
+
+OBJ
+material_type LAMBERTIAN
+albedo 0.7 0.7 0.7
+file_name ../obj/city.obj

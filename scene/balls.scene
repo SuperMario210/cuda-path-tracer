@@ -1,0 +1,42 @@
+CAMERA
+position 0 1 5
+look_at 0 0.5 0
+fov 35
+aperture 0.1
+focus_dist 4.75
+
+ENVIRONMENT
+file_name ../background/studio.hdr
+
+PLANE
+material_type LAMBERTIAN
+albedo 0.325 0.3 0.35
+position 0 0 0
+normal 0 1 0
+
+SPHERE
+material_type GLASS
+albedo 1 1 1
+refraction_index 1.5
+position -2.025 0.5 0
+radius 0.5
+
+SPHERE
+material_type LAMBERTIAN
+albedo 0.7 0.7 0.7
+position -0.675 0.5 0
+radius 0.5
+
+SPHERE
+material_type MIRROR
+albedo 0.5 0.5 0.5
+position 0.675 0.5 0
+radius 0.5
+
+SPHERE
+material_type GLOSSY
+albedo 0.15 0.25 0.4
+specular 1 1 1
+glossyness 0.05
+position 2.025 0.5 0
+radius 0.5

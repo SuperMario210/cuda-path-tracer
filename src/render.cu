@@ -95,7 +95,7 @@ __global__ void logic_kernel(PathData *paths, EnvironmentMap *envmap, float3 *im
 
 __device__ uint g_path_count = 0;
 
-__global__ void generate_primary_paths(Camera *camera, uint width, uint height, uint samples_per_pixel, uint path_count,
+__global__ void generate_primary_paths(Camera *camera, uint width, uint height, uint samples_per_pixel,
                                        PathData *paths, int seed, bool override)
 {
     const uint index = blockDim.x * blockIdx.x + threadIdx.x;
@@ -153,7 +153,7 @@ __global__ void generate_diffuse_paths(EnvironmentMap *envmap, PathData *paths, 
     paths->direction[index] = make_float4(out_dir, FLT_MAX);
 
     float env_pdf = envmap->pdf(out_dir);
-    float diff_pdf = max(dot(norm, out_dir) / PI, 0.0f);
+    float diff_pdf = fmaxf(dot(norm, out_dir) / PI, 0.0f);
     float mixed_pdf = (env_pdf + diff_pdf) * 0.5f;
     paths->throughput[index] *= paths->material[index] * (diff_pdf / mixed_pdf);
 
@@ -254,12 +254,11 @@ __host__ void launch_render_kernel(BVH *bvh, EnvironmentMap *envmap, Camera *cam
     const uint block_size = 128;
     const uint grid_size = (MAX_PATHS + block_size - 1) / block_size;
 
-    uint path_count = 0;
     bool is_working = false;
     bool override = true;
     do {
         generate_primary_paths<<<grid_size, block_size>>>(camera, width, height, samples_per_pixel,
-                                                          path_count, paths, rand(), override);
+                                                          paths, rand(), override);
 
         generate_diffuse_paths<<<grid_size, block_size>>>(envmap, paths, rand());
         generate_mirror_paths<<<grid_size, block_size>>>(paths);

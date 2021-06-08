@@ -5,6 +5,7 @@
 #include <cassert>
 #include <algorithm>
 #include <set>
+#include <chrono>
 #include "bvh.cuh"
 #include "../include/linear_math.cuh"
 
@@ -29,13 +30,19 @@ struct GPUBVHNode {
     int4 child_indices;     // (left.index, right.index, left.num_triangles, right.num_triangles)
 };
 
-BVH::BVH(std::vector<Triangle> h_triangles)
+BVH::BVH(std::vector<Triangle> h_triangles, const float4 &mat, const uint mat_type) : material(mat), material_type(mat_type)
 {
-    std::vector<BVHNode> h_nodes(2 * h_triangles.size());
+    std::cout << "Constructing BVH...\n";
+    auto t1 = std::chrono::high_resolution_clock::now();
 
+    std::vector<BVHNode> h_nodes(2 * h_triangles.size());
     size_t index = 0;
     build(0, h_triangles.size(), index, h_triangles, h_nodes);
     send_to_device(h_triangles, h_nodes);
+
+    auto t2 = std::chrono::high_resolution_clock::now();
+    auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
+    std::cout << "Constructed BVH in " << ms_int.count() << " ms\n";
 }
 
 BVH::~BVH()
@@ -185,7 +192,9 @@ void woopify_triangle(const Triangle &triangle, std::vector<float4> &gpu_triangl
 void BVH::send_to_device(const std::vector<Triangle> &h_triangles, const std::vector<BVHNode> &h_nodes)
 {
     std::vector<GPUBVHNode> gpu_nodes;
+    gpu_nodes.reserve(h_nodes.size() / 2);
     std::vector<float4> gpu_triangle_data;
+    gpu_triangle_data.reserve(h_triangles.size() * 4);
     gpu_triangle_data.push_back(make_float4(0));
     std::vector<stack_entry> stack;
     stack.push_back({0, 0, false});

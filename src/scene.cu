@@ -12,6 +12,48 @@
 #include "scene.h"
 #include "render.cuh"
 
+static void load_obj(const std::string &filename, std::vector<Triangle> &triangles)
+{
+    std::cout << "Loading .obj file...\n";
+    std::ifstream obj_file (filename);
+    std::vector<float3> vertices;
+    vertices.emplace_back();
+    size_t count = 0;
+    std::string line;
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    while (!obj_file.eof()) {
+        getline(obj_file, line);
+        if (obj_file.eof()) { break; }
+
+        char type;
+        std::istringstream iss(line);
+        iss >> type;
+
+        if (type == 'v') {
+            float3 v;
+            iss >> v.x >> v.y >> v.z;
+            vertices.push_back(v);
+        } else if (type == 'f') {
+            int i1, i2, i3;
+            iss >> i1 >> i2 >> i3;
+            i1 = (i1 < 0) ? i1 + vertices.size() : i1;
+            i2 = (i2 < 0) ? i2 + vertices.size() : i2;
+            i3 = (i3 < 0) ? i3 + vertices.size() : i3;
+            triangles.emplace_back(vertices[i1], vertices[i2], vertices[i3]);
+            count++;
+        } else {
+            std::cerr << "A parsing error occurred while reading in "
+                      << "the .obj file" << filename << "\n";
+            return;
+        }
+    }
+
+    auto t2 = std::chrono::high_resolution_clock::now();
+    auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
+    std::cout << "Loaded " << count << " triangles in " << ms_int.count() << " ms\n";
+}
+
 static std::istringstream read_line(std::ifstream &file, std::string &type)
 {
     type.clear();
@@ -93,14 +135,9 @@ static void read_material(std::ifstream &file, float4 &mat, uint &mat_type)
     }
 }
 
-Scene::Scene(const std::string &filename, size_t width, size_t height)
+Scene::Scene(const std::string &filename, size_t width, size_t height) : camera(), environment(), spheres(), planes(),
+                                                                         bvh(), image_data(), h_environment(), h_bvh()
 {
-    // Allocate device memory
-    gpuErrchk(cudaMalloc(&camera, sizeof(Camera)));
-    gpuErrchk(cudaMalloc(&bvh, sizeof(BVH)));
-    gpuErrchk(cudaMalloc(&environment, sizeof(EnvironmentMap)));
-    gpuErrchk(cudaMalloc(&image_data, width * height * sizeof(float3)));
-
     std::vector<Sphere> h_spheres;
     std::vector<Plane> h_planes;
     std::ifstream scene_file(filename);
@@ -111,6 +148,9 @@ Scene::Scene(const std::string &filename, size_t width, size_t height)
         if (scene_file.eof()) { break; }
 
         if (type == "CAMERA") {
+            // Only one camera allowed per scene
+            assert(camera == nullptr);
+
             float3 position = read_float3(scene_file, "position");
             float3 look_at = read_float3(scene_file, "look_at");
             float fov = read_float(scene_file, "fov");
@@ -118,13 +158,16 @@ Scene::Scene(const std::string &filename, size_t width, size_t height)
             float focus_dist = read_float(scene_file, "focus_dist");
 
             Camera h_camera(position, look_at, fov, static_cast<float>(width) / height, aperture, focus_dist);
+            gpuErrchk(cudaMalloc(&camera, sizeof(Camera)));
             gpuErrchk(cudaMemcpy(camera, &h_camera, sizeof(Camera), cudaMemcpyHostToDevice));
         } else if (type == "ENVIRONMENT") {
             // Only one environment allowed per scene
-            assert(h_environment == nullptr);
+            assert(environment == nullptr);
 
             std::string file_name = read_string(scene_file, "file_name");
+
             h_environment = new EnvironmentMap(file_name);
+            gpuErrchk(cudaMalloc(&environment, sizeof(EnvironmentMap)));
             gpuErrchk(cudaMemcpy(environment, h_environment, sizeof(EnvironmentMap), cudaMemcpyHostToDevice));
         } else if (type == "SPHERE") {
             float4 mat;
@@ -141,12 +184,20 @@ Scene::Scene(const std::string &filename, size_t width, size_t height)
             float3 normal = read_float3(scene_file, "normal");
             h_planes.emplace_back(position, normal, mat, mat_type);
         } else if (type == "OBJ") {
+            // Only one obj allowed per scene (for now)
+            assert(bvh == nullptr);
+
             float4 mat;
             uint mat_type;
             read_material(scene_file, mat, mat_type);
             std::string file_name = read_string(scene_file, "file_name");
-//            read_obj_file(file_name, material, primitives);
-            std::cerr << "OBJs loading not yet supported in scene\n";
+
+            std::vector<Triangle> triangles;
+            load_obj(file_name, triangles);
+
+            h_bvh = new BVH(triangles, mat, mat_type);
+            gpuErrchk(cudaMalloc(&bvh, sizeof(BVH)));
+            gpuErrchk(cudaMemcpy(bvh, h_bvh, sizeof(BVH), cudaMemcpyHostToDevice));
         }
     }
 
@@ -162,27 +213,22 @@ Scene::Scene(const std::string &filename, size_t width, size_t height)
         gpuErrchk(cudaMemcpy(spheres, h_spheres.data(), num_spheres * sizeof(Sphere), cudaMemcpyHostToDevice));
     }
 
-//    if (primitives.size() > 0) {
-//        std::cout << "Constructing BVH...\n";
-//        auto t1 = std::chrono::high_resolution_clock::now();
-//        auto bvh = std::make_shared<BVH>(primitives);
-//        auto t2 = std::chrono::high_resolution_clock::now();
-//        auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
-//        std::cout << "Constructed BVH in " << ms_int.count() << " ms\n";
-//
-//        objects->add(bvh);
-//    }
+    gpuErrchk(cudaMalloc(&image_data, width * height * sizeof(float3)));
+
+    assert(camera != nullptr);
+    assert(environment != nullptr);
+    assert(image_data != nullptr);
 }
 
 Scene::~Scene()
 {
     gpuErrchk(cudaFree(camera));
-    gpuErrchk(cudaFree(bvh));
     gpuErrchk(cudaFree(environment));
-    gpuErrchk(cudaFree(planes));
-    gpuErrchk(cudaFree(spheres));
     gpuErrchk(cudaFree(image_data));
+    if (planes != nullptr) gpuErrchk(cudaFree(planes));
+    if (planes != nullptr) gpuErrchk(cudaFree(spheres));
+    if (planes != nullptr) gpuErrchk(cudaFree(bvh));
 
     delete h_environment;
-//    delete h_bvh;
+    if (h_bvh != nullptr) delete h_bvh;
 }

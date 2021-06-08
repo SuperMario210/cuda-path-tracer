@@ -3,7 +3,7 @@
 
 #define IMPORTANCE_SAMPLING
 #define RUSSIAN_ROULETTE
-//#define CONSECUTIVE_PATHS
+//#define INTERLACE_PATHS
 #define MIN_DEPTH               3
 #define MAX_DEPTH               16
 
@@ -30,19 +30,11 @@ void intersect_scene(PathData *paths, BVH *bvh, Plane *planes, uint num_planes, 
     for (uint i = 0; i < num_spheres; i++) {
         spheres[i].intersect(o, d, t_max, n, mat, mat_type);
     }
-//    const Sphere sphere1(make_float3(2.025, 0.5, 0), 0.5, make_float4(0.15, 0.25, 0.4, 0.05), IS_GLOSSY);
-//    const Sphere sphere2(make_float3(0.675, 0.5, 0), 0.5, make_float4(0.5, 0.5, 0.5, 0), IS_MIRROR);
-//    const Sphere sphere3(make_float3(-0.675, 0.5, 0), 0.5, make_float4(0.7, 0.7, 0.7, 0), IS_DIFFUSE);
-//    const Sphere sphere4(make_float3(-2.025, 0.5, 0), 0.5, make_float4(1, 1, 1, 1.5), IS_GLASS);
-//    sphere1.intersect(o, d, t_max, n, mat, mat_type);
-//    sphere2.intersect(o, d, t_max, n, mat, mat_type);
-//    sphere3.intersect(o, d, t_max, n, mat, mat_type);
-//    sphere4.intersect(o, d, t_max, n, mat, mat_type);
 
     // Intersect triangles
-//    if (bvh != nullptr) {
-//        bvh->intersect(o, d, t_max, n, mat, mat_type);
-//    }
+    if (bvh != nullptr) {
+        bvh->intersect(o, d, t_max, n, mat, mat_type);
+    }
 
     paths->direction[index].w = t_max;
     paths->normal[index] = make_float4(normalize(n));

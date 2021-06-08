@@ -60,8 +60,8 @@ class BVH
 public:
     float4 *triangles;
     float4 *nodes;
-    float4 material = make_float4(0.65);
-    uint material_type = 0x8;
+    float4 material;
+    uint material_type;
 
     cudaTextureObject_t nodes_texture;
 
@@ -69,7 +69,7 @@ public:
     void send_to_device(const std::vector<Triangle> &h_triangles, const std::vector<BVHNode> &h_nodes);
 
 public:
-    BVH(std::vector<Triangle> objects);
+    BVH(std::vector<Triangle> objects, const float4 &mat, const uint mat_type);
     ~BVH();
 
     __device__ __inline__

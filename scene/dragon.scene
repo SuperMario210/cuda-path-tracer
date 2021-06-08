@@ -1,0 +1,22 @@
+CAMERA
+position -1.1 0.2 -0.8
+look_at 0 0.0 0
+fov 38
+aperture 0.01
+focus_dist 1.15
+
+ENVIRONMENT
+file_name ../background/forest.hdr
+
+PLANE
+material_type LAMBERTIAN
+albedo 0.65 0.1 0.1
+position 0 -0.283 0
+normal 0 1 0
+
+OBJ
+material_type GLOSSY
+albedo 0.65 0.65 0.65
+specular 1 1 1
+glossyness 0.05
+file_name ../obj/dragon.obj

@@ -3,6 +3,7 @@
 
 #define IMPORTANCE_SAMPLING
 #define RUSSIAN_ROULETTE
+//#define CONSECUTIVE_PATHS
 #define MIN_DEPTH               3
 #define MAX_DEPTH               16
 
@@ -62,6 +63,8 @@ __global__ void logic_kernel(PathData *paths, EnvironmentMap *envmap, float3 *im
     if (paths->direction[index].w == FLT_MAX || paths->depth[index]++ >= MAX_DEPTH) {
         uint pixel_index = paths->pixel_index[index];
         float3 color = make_float3(paths->throughput[index]) * envmap->sample(make_float3(paths->direction[index])) / samples_per_pixel;
+
+        // TODO: this atomic add is slow when CONSECUTIVE_PATHS is enabled
         atomicAdd(&image_data[pixel_index].x, color.x);
         atomicAdd(&image_data[pixel_index].y, color.y);
         atomicAdd(&image_data[pixel_index].z, color.z);
@@ -100,8 +103,17 @@ __global__ void generate_primary_paths(Camera *camera, uint width, uint height, 
 
     if (index >= MAX_PATHS || (!override && !paths->get_flag(index, IS_NEW_PATH))) return;
 
+#ifdef INTERLACE_PATHS
+
     const uint global_index = atomicAdd(&g_path_count, 1) / samples_per_pixel;
     if (global_index >= width * height) return;
+
+#else
+
+    const uint global_index = atomicAdd(&g_path_count, 1);
+    if (global_index >= width * height * samples_per_pixel) return;
+
+#endif
 
     curandState rand_state;
     curand_init(seed + index, 0, 0, &rand_state);

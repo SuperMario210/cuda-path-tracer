@@ -1,3 +1,4 @@
+#include <cfloat>
 #include "camera.cuh"
 #include "render.cuh"
 

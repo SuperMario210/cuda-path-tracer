@@ -1,0 +1,22 @@
+CAMERA
+position -2 -1 7
+look_at 0 -0.75 0
+fov 40
+aperture 0.1
+focus_dist 7
+
+ENVIRONMENT
+file_name ../background/sunset.hdr
+
+PLANE
+material_type LAMBERTIAN
+albedo 0.15 0.15 0.15
+position 0 -2.875 0
+normal 0 1 0
+
+OBJ
+material_type GLOSSY
+albedo 0.7 0.1 0.1
+specular 1 1 1
+glossyness 0.05
+file_name ../obj/scream.obj

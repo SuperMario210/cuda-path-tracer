@@ -55,13 +55,19 @@ Dragon scene (~):
 
 ## Sample Renders
 ![](img/balls.png)
-1920 x 1080p, 512 samples per pixel
-
-![](img/city.png)
-1920 x 1080p, 512 samples per pixel
+1920 x 1080p, 2048 samples per pixel
 
 ![](img/dragon.png)
-1920 x 1080p, 512 samples per pixel
+1920 x 1080p, 2048 samples per pixel
+
+![](img/city.png)
+1920 x 1080p, 2048 samples per pixel
+
+![](img/suzanne.png)
+1920 x 1080p, 2048 samples per pixel
+
+![](img/scream.png)
+1920 x 1080p, 2048 samples per pixel
 
 ## Performance Analysis
 

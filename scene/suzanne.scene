@@ -3,7 +3,7 @@ position 0 0.95 4
 look_at 0 0.95 0
 fov 35
 aperture 0.1
-focus_dist 7
+focus_dist 3.5
 
 ENVIRONMENT
 file_name ../background/studio.hdr

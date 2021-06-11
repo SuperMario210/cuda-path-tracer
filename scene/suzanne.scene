@@ -1,8 +1,8 @@
 CAMERA
-position 0 0.95 4
-look_at 0 0.95 0
+position 0 -0.05 4
+look_at 0 -0.05 0
 fov 35
-aperture 0.1
+aperture 0
 focus_dist 3.5
 
 ENVIRONMENT
@@ -17,4 +17,4 @@ normal 0 0 1
 OBJ
 material_type LAMBERTIAN
 albedo 0.2 0.89 0.915
-file_name ../obj/suzanne_lowpoly.obj
+file_name ../obj/suzanne.obj

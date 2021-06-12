@@ -43,14 +43,16 @@ void intersect_scene(PathData *paths, BVH *bvh, Plane *planes, uint num_planes, 
     paths->flags[index] = mat_type | IS_ACTIVE;
 }
 
+// True if rendering is not yet complete, false otherwise
 __device__ bool g_is_working = false;
 
-__global__ void logic_kernel(PathData *paths, EnvironmentMap *envmap, float3 *image_data, uint samples_per_pixel, int seed)
+__global__
+void logic_kernel(PathData *paths, EnvironmentMap *envmap, float3 *image_data, uint samples_per_pixel, int seed)
 {
     uint index = blockDim.x * blockIdx.x + threadIdx.x;
     if (index >= MAX_PATHS || !paths->get_flag(index, IS_ACTIVE)) return;
 
-//    paths->flags[index] = 0;
+    // If any threads get to this point, rendering is not yet complete
     g_is_working = true;
 
     curandState rand_state;
@@ -59,9 +61,9 @@ __global__ void logic_kernel(PathData *paths, EnvironmentMap *envmap, float3 *im
     // Background intersection
     if (paths->direction[index].w == FLT_MAX || paths->depth[index]++ >= MAX_DEPTH) {
         uint pixel_index = paths->pixel_index[index];
-        float3 color = make_float3(paths->throughput[index]) * envmap->sample(make_float3(paths->direction[index])) / samples_per_pixel;
+        float3 color = make_float3(paths->throughput[index]) * envmap->sample(make_float3(paths->direction[index])) /
+                samples_per_pixel;
 
-        // TODO: this atomic add is slow when CONSECUTIVE_PATHS is enabled
         atomicAdd(&image_data[pixel_index].x, color.x);
         atomicAdd(&image_data[pixel_index].y, color.y);
         atomicAdd(&image_data[pixel_index].z, color.z);
@@ -70,13 +72,9 @@ __global__ void logic_kernel(PathData *paths, EnvironmentMap *envmap, float3 *im
         return;
     }
 
-    // Material Intersection
-//    if (paths->get_flag(index, IS_DIFFUSE)) {
-//
-//    }
-
 #ifdef RUSSIAN_ROULETTE
 
+    // Russian roulette termination
     if (paths->depth[index]++ >= MIN_DEPTH) {
         float4 throughput = paths->throughput[index];
         float p = fmaxf(throughput.x, fmaxf(throughput.y, throughput.z));
@@ -93,12 +91,10 @@ __global__ void logic_kernel(PathData *paths, EnvironmentMap *envmap, float3 *im
 __device__ uint g_path_count = 0;
 
 __global__ void generate_primary_paths(Camera *camera, uint width, uint height, uint samples_per_pixel,
-                                       PathData *paths, int seed, bool override)
+                                       PathData *paths, int seed, bool first_iteration)
 {
     const uint index = blockDim.x * blockIdx.x + threadIdx.x;
-//    if (index >= MAX_PATHS || !paths->get_flag(index, IS_NEW_PATH)) return;
-
-    if (index >= MAX_PATHS || (!override && !paths->get_flag(index, IS_NEW_PATH))) return;
+    if (index >= MAX_PATHS || (!first_iteration && !paths->get_flag(index, IS_NEW_PATH))) return;
 
 #ifdef INTERLACE_PATHS
 
@@ -254,24 +250,27 @@ __host__ void render_scene(Scene *scene, size_t width, size_t height, size_t sam
     const uint grid_size = (MAX_PATHS + block_size - 1) / block_size;
 
     bool is_working = false;
-    bool override = true;
+    bool first_iteration = true;
     do {
+        // Material kernels
         generate_primary_paths<<<grid_size, block_size>>>(scene->camera, width, height, samples_per_pixel,
-                                                          paths, rand(), override);
-
+                                                          paths, rand(), first_iteration);
         generate_diffuse_paths<<<grid_size, block_size>>>(scene->environment, paths, rand());
-
         generate_mirror_paths<<<grid_size, block_size>>>(paths);
-
         generate_glossy_paths<<<grid_size, block_size>>>(scene->environment, paths, rand());
-
         generate_glass_paths<<<grid_size, block_size>>>(paths, rand());
 
-        intersect_scene<<<grid_size, block_size>>>(paths, scene->bvh, scene->planes, scene->num_planes, scene->spheres, scene->num_spheres);
+        // Intersection kernel
+        intersect_scene<<<grid_size, block_size>>>(paths, scene->bvh, scene->planes, scene->num_planes, scene->spheres,
+                                                   scene->num_spheres);
 
+        // Logic kernel (handles advancing paths by one stage)
         logic_kernel<<<grid_size, block_size>>>(paths, scene->environment, scene->image_data, samples_per_pixel, rand());
 
-        override = false;
+        // First iteration is over
+        first_iteration = false;
+
+        // Copy value of g_is_working to host then set g_is_working to false
         bool temp = false;
         gpuErrchk(cudaMemcpyFromSymbol(&is_working, g_is_working, sizeof(bool)));
         gpuErrchk(cudaMemcpyToSymbol(g_is_working, &temp, sizeof(bool)));
